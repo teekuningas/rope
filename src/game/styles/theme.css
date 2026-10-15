@@ -214,6 +214,17 @@ a.back-link:active {
   letter-spacing: 0.03em;
 }
 
+#controls-guide .hints {
+  background: rgba(28, 34, 43, 0.7);
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--theme-border-subtle);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 0.8rem;
+  color: var(--theme-text-muted);
+}
+
 #controls-guide a {
   color: var(--theme-text-muted);
   text-decoration: none;

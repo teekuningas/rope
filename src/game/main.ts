@@ -113,10 +113,7 @@ class GameApp {
   }
 
   public async init(): Promise<void> {
-    const statusMsg = document.getElementById('status-msg');
     try {
-      if (statusMsg) statusMsg.textContent = 'Loading game assets...';
-
       // 1. Load tiles & sprites definitions
       const data = await AssetLoader.loadCoreGameData();
       this.tiles = data.tiles;
@@ -139,17 +136,9 @@ class GameApp {
 
       await this.loadMap('/assets/data/Default.xml');
 
-      if (statusMsg) {
-        statusMsg.textContent = 'WASD to move · Space for lightning · Drag to pan';
-        setTimeout(() => {
-          if (statusMsg) statusMsg.style.display = 'none';
-        }, 5000);
-      }
-
       requestAnimationFrame(() => this.loop());
     } catch (err) {
       console.error('Failed to init game:', err);
-      if (statusMsg) statusMsg.textContent = 'Error loading game. Check console.';
     }
   }
 
@@ -190,17 +179,6 @@ class GameApp {
     this.player.y = 2300;
     this.camera.x = 2300;
     this.camera.y = 2300;
-  }
-
-  public strikeLightningInFront(): void {
-    const strikeOffset = 250;
-    let targetX = this.player.x;
-    let targetY = this.player.y;
-    if (this.player.facing === 'up') targetY -= strikeOffset;
-    else if (this.player.facing === 'down') targetY += strikeOffset;
-    else if (this.player.facing === 'left') targetX -= strikeOffset;
-    else if (this.player.facing === 'right') targetX += strikeOffset;
-    this.strikeLightning(targetX, targetY);
   }
 
   private initTouchControls(): void {
@@ -463,11 +441,6 @@ class GameApp {
       // 'P' hotkey for picking up nearby item
       if (e.code === 'KeyP') {
         this.pickupNearbyItem();
-      }
-
-      // Space bar triggers Lightning strike in front of player
-      if (e.code === 'Space') {
-        this.strikeLightningInFront();
       }
     });
 
