@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>Editor</title>
     <link rel="stylesheet" href="/src/editor/styles/layout.css" />
     <link rel="stylesheet" href="/src/editor/styles/editor.css" />
@@ -53,11 +56,11 @@
         <!-- Floating Touch Toolbar for Mobile / Laptop quick actions -->
         <div id="editor-touch-bar" class="editor-touch-bar">
           <div class="touch-bar-group">
-            <button id="btn-touch-palette" class="touch-bar-btn preview-chip" title="Active selection / Open palette">
+            <button id="btn-touch-palette" class="touch-bar-btn preview-chip" title="Active selection / Open palette" aria-label="Open palette">
               <img id="touch-active-img" src="" alt="Active Item" />
               <span id="touch-active-rot" class="rot-badge">0°</span>
             </button>
-            <button id="btn-touch-rotate" class="touch-bar-btn" title="Rotate Selection (R)">
+            <button id="btn-touch-rotate" class="touch-bar-btn" title="Rotate Selection (R)" aria-label="Rotate selection">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
               </svg>
@@ -65,35 +68,32 @@
           </div>
 
           <div class="touch-bar-group mode-group">
-            <button id="btn-mode-paint" class="touch-bar-btn active" title="Paint mode">
+            <button id="btn-mode-paint" class="touch-bar-btn active" title="Paint mode (B)" aria-label="Paint mode">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m14 12-8.5 8.5a2.12 2.12 0 1 1-3-3L11 9"></path>
                 <path d="M16 16s2.5 1 4 0c1.5-1 1-3 1-3l-7-7-3 3 5 7z"></path>
               </svg>
-              <span>Paint</span>
             </button>
-            <button id="btn-mode-erase" class="touch-bar-btn" title="Erase mode">
+            <button id="btn-mode-erase" class="touch-bar-btn" title="Erase mode (E)" aria-label="Erase mode">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
               </svg>
-              <span>Erase</span>
             </button>
-            <button id="btn-mode-pan" class="touch-bar-btn" title="Pan mode">
+            <button id="btn-mode-pan" class="touch-bar-btn" title="Pan mode (H)" aria-label="Pan mode">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 11V6a2 2 0 0 0-4 0v5"></path>
                 <path d="M14 10V4a2 2 0 0 0-4 0v7"></path>
                 <path d="M10 10.5V6a2 2 0 0 0-4 0v8"></path>
                 <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path>
               </svg>
-              <span>Pan</span>
             </button>
           </div>
 
           <div class="touch-bar-group">
-            <button id="btn-touch-zoom-out" class="touch-bar-btn sm" title="Zoom Out">
+            <button id="btn-touch-zoom-out" class="touch-bar-btn sm" title="Zoom Out (-)" aria-label="Zoom out">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
-            <button id="btn-touch-zoom-in" class="touch-bar-btn sm" title="Zoom In">
+            <button id="btn-touch-zoom-in" class="touch-bar-btn sm" title="Zoom In (+)" aria-label="Zoom in">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
           </div>
@@ -104,7 +104,7 @@
     <footer>
       <div id="status-coords">0, 0</div>
       <div class="controls-hint">
-        WASD pan &middot; Left paint &middot; Right erase &middot; R rotate &middot; S snap &middot; Wheel zoom
+        WASD pan &middot; Left paint &middot; Right erase &middot; B paint &middot; E erase &middot; H pan &middot; R rotate &middot; G snap &middot; Wheel zoom
       </div>
       <div id="status-map-size">10 &times; 10</div>
     </footer>

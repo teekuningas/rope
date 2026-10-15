@@ -44,6 +44,7 @@ class MapEditorApp {
 
   private keyboardCursor = { x: 0, y: 0 };
   private useKeyboardCursor: boolean = false;
+  private isMouseInside: boolean = false;
 
   constructor() {
     this.canvas = document.getElementById('editor-canvas') as HTMLCanvasElement;
@@ -370,6 +371,17 @@ class MapEditorApp {
         this.toggleSnap();
       }
 
+      // Quick tool mode shortcuts: B/P for paint, E for erase, H for pan
+      if ((e.code === 'KeyB' || e.code === 'KeyP') && !e.ctrlKey && !e.metaKey) {
+        this.setTouchMode('paint');
+      }
+      if (e.code === 'KeyE' && !e.ctrlKey && !e.metaKey) {
+        this.setTouchMode('erase');
+      }
+      if (e.code === 'KeyH' && !e.ctrlKey && !e.metaKey) {
+        this.setTouchMode('pan');
+      }
+
       // Laptop Mouse Simulation: Arrow keys navigate map cells
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
         e.preventDefault();
@@ -442,8 +454,6 @@ class MapEditorApp {
 
     if (mode === 'pan') {
       this.canvas.style.cursor = 'grab';
-    } else if (mode === 'erase') {
-      this.canvas.style.cursor = 'not-allowed';
     } else {
       this.canvas.style.cursor = 'crosshair';
     }
@@ -452,7 +462,17 @@ class MapEditorApp {
   private bindMouse(): void {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+    this.canvas.addEventListener('pointerenter', () => {
+      this.isMouseInside = true;
+    });
+
+    this.canvas.addEventListener('pointerleave', () => {
+      this.isMouseInside = false;
+    });
+
     this.canvas.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.isMouseInside = true;
       this.useKeyboardCursor = false;
       try {
         this.canvas.setPointerCapture(e.pointerId);
@@ -472,6 +492,7 @@ class MapEditorApp {
             this.mouse.button = 0;
             this.applyToolAtMouse();
           } else if (this.touchMode === 'erase') {
+            this.mouse.isDown = true;
             this.deleteSpriteAtMouse();
           }
         } else if (this.activeCanvasPointers.size === 2) {
@@ -493,6 +514,7 @@ class MapEditorApp {
         if (e.button === 1 || this.touchMode === 'pan') {
           this.isMiddleDragging = true;
           this.dragStart = { x: e.clientX, y: e.clientY };
+          this.canvas.style.cursor = 'grabbing';
         } else if (e.button === 0) {
           if (this.touchMode === 'erase') {
             this.deleteSpriteAtMouse();
@@ -508,6 +530,7 @@ class MapEditorApp {
     });
 
     this.canvas.addEventListener('pointermove', (e) => {
+      this.isMouseInside = true;
       if (this.activeCanvasPointers.has(e.pointerId)) {
         this.activeCanvasPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       }
@@ -540,17 +563,23 @@ class MapEditorApp {
             this.camera.y = this.touchPanStart.camY - dy / this.camera.zoom;
           } else if (this.touchMode === 'paint' && this.activeMode === 'tile' && this.mouse.isDown) {
             this.applyToolAtMouse();
+          } else if (this.touchMode === 'erase' && this.mouse.isDown) {
+            this.deleteSpriteAtMouse();
           }
         }
       } else {
         // Mouse move
-        if (this.isMiddleDragging) {
+        if (this.isMiddleDragging || (this.touchMode === 'pan' && this.mouse.isDown)) {
           const dx = e.clientX - this.dragStart.x;
           const dy = e.clientY - this.dragStart.y;
           this.camera.pan(-dx, -dy);
           this.dragStart = { x: e.clientX, y: e.clientY };
+        } else if (this.mouse.isDown && this.touchMode === 'erase') {
+          this.deleteSpriteAtMouse();
         } else if (this.mouse.isDown && this.mouse.button === 0 && this.activeMode === 'tile' && this.touchMode === 'paint') {
           this.applyToolAtMouse(e);
+        } else if (this.mouse.isDown && this.mouse.button === 2) {
+          this.deleteSpriteAtMouse();
         }
       }
 
@@ -560,10 +589,17 @@ class MapEditorApp {
     const onPointerEnd = (e: PointerEvent) => {
       this.mouse.isDown = false;
       this.isMiddleDragging = false;
+      if (this.touchMode === 'pan') {
+        this.canvas.style.cursor = 'grab';
+      }
       try {
         this.canvas.releasePointerCapture(e.pointerId);
       } catch {}
       this.activeCanvasPointers.delete(e.pointerId);
+      if (this.activeCanvasPointers.size === 1 && this.touchMode === 'pan') {
+        const remaining = Array.from(this.activeCanvasPointers.values())[0];
+        this.touchPanStart = { x: remaining.x, y: remaining.y, camX: this.camera.x, camY: this.camera.y };
+      }
       if (this.activeCanvasPointers.size < 2) {
         this.initialPinchDist = null;
       }
@@ -664,22 +700,29 @@ class MapEditorApp {
     }
   }
 
-  private deleteSpriteAtMouse(): void {
-    if (!this.spriteLayer) return;
-    const world = this.camera.screenToWorld(this.mouse.x, this.mouse.y);
-
+  public getSpriteAtWorld(worldX: number, worldY: number): { unit: any; index: number } | null {
+    if (!this.spriteLayer) return null;
     for (let i = this.spriteLayer.layer.length - 1; i >= 0; i--) {
       const unit = this.spriteLayer.layer[i];
       const sizePx = unit.sprite.size * Engine.basicWidth;
       if (
-        world.x >= unit.position.x &&
-        world.x <= unit.position.x + sizePx &&
-        world.y >= unit.position.y &&
-        world.y <= unit.position.y + sizePx
+        worldX >= unit.position.x &&
+        worldX <= unit.position.x + sizePx &&
+        worldY >= unit.position.y &&
+        worldY <= unit.position.y + sizePx
       ) {
-        this.spriteLayer.remove(unit);
-        break;
+        return { unit, index: i };
       }
+    }
+    return null;
+  }
+
+  private deleteSpriteAtMouse(): void {
+    if (!this.spriteLayer) return;
+    const world = this.camera.screenToWorld(this.mouse.x, this.mouse.y);
+    const target = this.getSpriteAtWorld(world.x, world.y);
+    if (target) {
+      this.spriteLayer.remove(target.unit);
     }
   }
 
@@ -903,6 +946,18 @@ class MapEditorApp {
     this.ctx.strokeRect(0, 0, this.mapLayer.width * Engine.tileWidth, this.mapLayer.height * Engine.tileHeight);
 
     // 4. Draw Cursor Hint / Placement Preview
+    // Pan mode: Do NOT draw any cursor previews or selection frames -- keep the map clean for fluid panning
+    if (this.touchMode === 'pan') {
+      this.ctx.restore();
+      return;
+    }
+
+    // Only draw cursor preview if mouse is inside the canvas or keyboard cursor is active
+    if (!this.isMouseInside && !this.useKeyboardCursor) {
+      this.ctx.restore();
+      return;
+    }
+
     let targetWorldX = 0;
     let targetWorldY = 0;
 
@@ -915,6 +970,44 @@ class MapEditorApp {
       targetWorldY = world.y;
     }
 
+    // Erase mode: Never draw the selected sprite or tile!
+    // Instead highlight any targeted sprite with a clean red deletion frame,
+    // or show a subtle circular eraser reticle.
+    if (this.touchMode === 'erase') {
+      const target = this.getSpriteAtWorld(targetWorldX, targetWorldY);
+      if (target) {
+        const unit = target.unit;
+        const sizePx = unit.sprite.size * Engine.basicWidth;
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(239, 68, 68, 0.18)';
+        this.ctx.fillRect(unit.position.x, unit.position.y, sizePx, sizePx);
+        this.ctx.strokeStyle = '#ef4444';
+        this.ctx.lineWidth = 2.5 / this.camera.zoom;
+        this.ctx.setLineDash([6 / this.camera.zoom, 4 / this.camera.zoom]);
+        this.ctx.strokeRect(unit.position.x, unit.position.y, sizePx, sizePx);
+        this.ctx.restore();
+      } else {
+        this.ctx.save();
+        this.ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
+        this.ctx.lineWidth = 1.5 / this.camera.zoom;
+        const r = 14 / this.camera.zoom;
+        this.ctx.beginPath();
+        this.ctx.arc(targetWorldX, targetWorldY, r, 0, Math.PI * 2);
+        this.ctx.stroke();
+        const cross = 5 / this.camera.zoom;
+        this.ctx.beginPath();
+        this.ctx.moveTo(targetWorldX - cross, targetWorldY);
+        this.ctx.lineTo(targetWorldX + cross, targetWorldY);
+        this.ctx.moveTo(targetWorldX, targetWorldY - cross);
+        this.ctx.lineTo(targetWorldX, targetWorldY + cross);
+        this.ctx.stroke();
+        this.ctx.restore();
+      }
+      this.ctx.restore();
+      return;
+    }
+
+    // Paint mode: Draw ghost tile or ghost sprite preview
     if (this.activeMode === 'tile' && this.selectedTile?.texture?.complete) {
       const cell = Engine.vectorToCell(targetWorldX, targetWorldY);
       const destX = cell.x * Engine.tileWidth;
@@ -980,5 +1073,6 @@ class MapEditorApp {
 // Start on DOM content loaded
 window.addEventListener('DOMContentLoaded', () => {
   const editor = new MapEditorApp();
+  (window as any).editor = editor;
   editor.init();
 });

@@ -48,7 +48,7 @@
         <spriteId>07</spriteId>
         <textureName>pallo</textureName>
         <size>1</size>
-        <isItem>false</isItem>
+        <isItem>true</isItem>
         <canRotate>false</canRotate>
       </Item>
       <Item>

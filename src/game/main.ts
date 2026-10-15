@@ -688,6 +688,7 @@ class GameApp {
           const img = document.createElement('img');
           img.src = tex.src;
           img.alt = this.getItemName(item);
+          img.dataset.slotIndex = String(i);
           slot.appendChild(img);
         }
         slot.title = this.getItemName(item);
@@ -916,6 +917,21 @@ class GameApp {
         sprite.update(deltaMs);
       }
     }
+
+    // Update animated textures in inventory slots if modal is open
+    if (this.showInventory) {
+      const slotImgs = document.querySelectorAll<HTMLImageElement>('#inventory-grid .inventory-slot img');
+      slotImgs.forEach((img) => {
+        const idx = Number(img.dataset.slotIndex);
+        if (!isNaN(idx) && idx < this.player.inventory.length) {
+          const item = this.player.inventory[idx];
+          const tex = item.sprite?.texture ?? item.texture;
+          if (tex && img.src !== tex.src) {
+            img.src = tex.src;
+          }
+        }
+      });
+    }
   }
 
   private lastTime: number = 0;
@@ -1110,5 +1126,6 @@ class GameApp {
 // Start Game App
 window.addEventListener('DOMContentLoaded', () => {
   const game = new GameApp();
+  (window as any).game = game;
   game.init();
 });

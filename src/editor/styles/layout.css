@@ -13,6 +13,10 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 header {
@@ -31,6 +35,7 @@ header {
   display: flex;
   overflow: hidden;
   position: relative;
+  touch-action: none;
 }
 
 #sidebar {
@@ -48,6 +53,7 @@ header {
   position: relative;
   background: #12161c;
   overflow: hidden;
+  touch-action: none;
 }
 
 canvas#editor-canvas {
@@ -55,6 +61,7 @@ canvas#editor-canvas {
   cursor: crosshair;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+  touch-action: none;
 }
 
 footer {
