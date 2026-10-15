@@ -4,6 +4,21 @@ import { MapLayer } from '@shared/map-layer';
 import { Sprite, Sprites } from '@shared/sprite';
 import { Tiles } from '@shared/tile';
 import { XmlLoader } from '@shared/xml-loader';
+import {
+  BoundingBox,
+  canWalkToPosition,
+  combineMovementInputs,
+  compareRenderDepth,
+  CoreEntity,
+  dropItemFromInventory,
+  Facing,
+  findNearbyPickupCandidate,
+  generateLightningPoints,
+  getItemMetadata,
+  getObstacleBoundingBox,
+  pickupEntity,
+  resolveFacing,
+} from '@core/game-logic';
 
 const GAME_TILE_SIZE = 512;
 Engine.tileWidth = GAME_TILE_SIZE;
@@ -16,17 +31,9 @@ interface HobbitTextures {
   left: HTMLImageElement;
 }
 
-interface WorldEntity {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+interface WorldEntity extends CoreEntity {
   sprite?: Sprite;
   texture?: HTMLImageElement;
-  isItem?: boolean;
-  posture?: number;
-  name?: string;
-  dropCooldownUntil?: number;
 }
 
 interface LightningStrike {
@@ -39,6 +46,12 @@ interface LightningStrike {
   maxLifetime: number;
 }
 
+/**
+ * GameApp: Browser Platform Orchestrator
+ *
+ * Connects the web platform (Canvas 2D, DOM Overlays, AudioContext, Pointer/Touch events)
+ * to the pure, portable game logic domain.
+ */
 class GameApp {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -55,7 +68,7 @@ class GameApp {
     width: 256,
     height: 512,
     baseSpeed: 10,
-    facing: 'down' as 'down' | 'up' | 'left' | 'right',
+    facing: 'down' as Facing,
     inventory: [] as WorldEntity[],
   };
 
@@ -88,7 +101,7 @@ class GameApp {
   private initialPinchZoom = 0.5;
 
   private activeLightnings: LightningStrike[] = [];
-  private screenFlash: number = 0; // alpha for white flash
+  private screenFlash: number = 0;
 
   constructor() {
     this.canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -109,7 +122,7 @@ class GameApp {
       this.tiles = data.tiles;
       this.sprites = data.sprites;
 
-      // 2. Load Hobbit character textures (256x512 native)
+      // 2. Load character textures (256x512 native)
       const [hDown, hRight, hUp, hLeft] = await Promise.all([
         AssetLoader.loadImage('/assets/characters/hobbit/hobitti_edesta.png'),
         AssetLoader.loadImage('/assets/characters/hobbit/hobitti_oikealta.png'),
@@ -158,6 +171,7 @@ class GameApp {
     for (const s of mapData.sprites) {
       const spriteObj = this.sprites.getSpriteWithId(s.spriteId);
       const sizePx = spriteObj.size * Engine.basicWidth;
+      const meta = getItemMetadata(spriteObj.id);
       this.worldEntities.push({
         x: s.positionX,
         y: s.positionY,
@@ -167,7 +181,8 @@ class GameApp {
         texture: spriteObj.texture ?? undefined,
         isItem: spriteObj.isItem,
         posture: s.posture ?? 0,
-        name: spriteObj.id === '06' ? 'Sword' : spriteObj.id === '01' ? 'Magic Relic' : `Item ${spriteObj.id}`,
+        spriteId: spriteObj.id,
+        name: meta.name,
       });
     }
 
@@ -223,7 +238,7 @@ class GameApp {
     this.applyTouchVisibility();
     window.addEventListener('resize', () => this.applyTouchVisibility());
 
-    // Virtual Joystick logic
+    // Virtual Joystick setup
     const joystickZone = document.getElementById('joystick-zone');
     const joystickBase = document.getElementById('joystick-base');
     const joystickThumb = document.getElementById('joystick-thumb');
@@ -323,9 +338,12 @@ class GameApp {
 
     bindButton('btn-lightning', () => this.strikeLightningInFront());
     bindButton('btn-inventory', () => this.toggleInventory());
-    bindButton('btn-pickup', () => this.pickupNearbyItem());
-    bindButton('btn-zoom-in', () => { this.camera.zoom = Math.min(1.0, this.camera.zoom + 0.25); });
-    bindButton('btn-zoom-out', () => { this.camera.zoom = Math.max(0.25, this.camera.zoom - 0.25); });
+    bindButton('btn-zoom-in', () => {
+      this.camera.zoom = Math.min(1.0, this.camera.zoom + 0.25);
+    });
+    bindButton('btn-zoom-out', () => {
+      this.camera.zoom = Math.max(0.25, this.camera.zoom - 0.25);
+    });
 
     this.updateCameraFollowUI();
     this.updateInventoryBtnUI();
@@ -362,10 +380,9 @@ class GameApp {
     } else if (this.touchMode === 'off') {
       shouldShow = false;
     } else {
-      // auto mode: coarse pointer, touch capability, hover none, or small viewport
       const isCoarse = window.matchMedia('(pointer: coarse)').matches;
       const isHoverNone = window.matchMedia('(hover: none)').matches;
-      const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
       const isSmallScreen = window.innerWidth <= 1024 || window.innerHeight <= 650;
       shouldShow = isCoarse || isHoverNone || hasTouch || isSmallScreen;
     }
@@ -443,7 +460,7 @@ class GameApp {
         this.camera.zoom = Math.max(0.25, this.camera.zoom - 0.25);
       }
 
-      // 'P' picks up nearby items
+      // 'P' hotkey for picking up nearby item
       if (e.code === 'KeyP') {
         this.pickupNearbyItem();
       }
@@ -465,7 +482,7 @@ class GameApp {
       this.mouse.y = -1000;
     });
 
-    // Pointer events on canvas: supports touch-drag panning, pinch zoom, item pickup tap, and tap lightning
+    // Pointer events on canvas: supports touch-drag panning, pinch zoom, and tap lightning
     this.canvas.addEventListener('pointerdown', (e) => {
       if (e.target !== this.canvas) return;
       this.startAudio();
@@ -504,7 +521,7 @@ class GameApp {
         return;
       }
 
-      // One-finger screen drag panning (Z-mode / free drag)
+      // One-finger screen drag panning
       if (this.activeCanvasPointers.size === 1 && this.canvasDragStart) {
         const dx = e.clientX - this.canvasDragStart.x;
         const dy = e.clientY - this.canvasDragStart.y;
@@ -535,19 +552,21 @@ class GameApp {
         const worldX = this.camera.x + centeredX / this.camera.zoom;
         const worldY = this.camera.y + centeredY / this.camera.zoom;
 
-        // Check if user tapped an item near the player
-        const clickedItemIndex = this.findNearbyItemAtWorldPos(worldX, worldY);
-        if (clickedItemIndex !== -1) {
-          const item = this.worldEntities[clickedItemIndex];
-          const itemCenterX = item.x + item.width / 2;
-          const itemCenterY = item.y + item.height / 2;
-          const distToPlayer = Math.hypot(this.player.x - itemCenterX, this.player.y - itemCenterY);
+        // Proximity tap on item in world
+        const tapCandidate = findNearbyPickupCandidate(this.worldEntities, { x: worldX, y: worldY }, 90);
+        if (tapCandidate) {
+          const itemCenterX = tapCandidate.entity.x + tapCandidate.entity.width / 2;
+          const itemCenterY = tapCandidate.entity.y + tapCandidate.entity.height / 2;
+          const distToPlayer = Math.hypot(this.playerGroundPos.x - itemCenterX, this.playerGroundPos.y - itemCenterY);
           if (distToPlayer <= 220) {
-            this.pickupItemByIndex(clickedItemIndex);
-            this.activeCanvasPointers.delete(e.pointerId);
-            this.canvasDragStart = null;
-            this.canvasHasDragged = false;
-            return;
+            const result = pickupEntity(this.player.inventory, this.worldEntities, tapCandidate.index);
+            if (result) {
+              this.player.inventory = result.inventory;
+              this.worldEntities = result.entities;
+              console.log(`Tapped to pick up: ${this.getItemName(result.pickedItem)}`);
+              this.updateInventoryModalUI();
+              return;
+            }
           }
         }
 
@@ -580,17 +599,8 @@ class GameApp {
     const startX = targetX + (Math.random() - 0.5) * 100;
     const startY = targetY - 1200;
 
-    // Generate procedural jagged bolt points
-    const segments = 12;
-    const points: { x: number; y: number }[] = [{ x: startX, y: startY }];
-    for (let i = 1; i < segments; i++) {
-      const t = i / segments;
-      const interpX = startX + (targetX - startX) * t;
-      const interpY = startY + (targetY - startY) * t;
-      const jitter = (Math.random() - 0.5) * 60;
-      points.push({ x: interpX + jitter, y: interpY });
-    }
-    points.push({ x: targetX, y: targetY });
+    // Procedural generation via pure function
+    const points = generateLightningPoints(startX, startY, targetX, targetY);
 
     this.activeLightnings.push({
       targetX,
@@ -602,21 +612,22 @@ class GameApp {
       maxLifetime: 14,
     });
 
-    this.screenFlash = 0.45; // trigger dramatic screen flash
+    this.screenFlash = 0.45;
     this.playThunderSound();
   }
 
   private playThunderSound(): void {
     try {
       if (!this.audioCtx) {
-        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
         this.audioCtx = new AudioCtx();
       }
       if (this.audioCtx.state === 'suspended') {
         this.audioCtx.resume();
       }
 
-      // Procedural synthetic thunder crackle & boom
       const duration = 1.2;
       const bufferSize = this.audioCtx.sampleRate * duration;
       const buffer = this.audioCtx.createBuffer(1, bufferSize, this.audioCtx.sampleRate);
@@ -647,36 +658,21 @@ class GameApp {
       gain.connect(this.audioCtx.destination);
 
       noise.start();
-    } catch {
-      // AudioContext might be blocked before first user click
-    }
+    } catch {}
   }
 
   public getItemName(ent: WorldEntity): string {
-    const id = ent.sprite?.id;
-    if (id === '06') return 'Sword';
-    if (id === '01') return 'Magic Relic';
-    if (id === '08') return 'Forest Mushroom';
-    if (id === '09') return 'Spotted Mushroom';
-    if (id === '07') return 'Soccer Ball';
-    return ent.name || `Item ${id ?? ''}`.trim();
+    return getItemMetadata(ent.sprite?.id, ent.name).name;
   }
 
   public getItemDesc(ent: WorldEntity): string {
-    const id = ent.sprite?.id;
-    if (id === '06') return 'A sharp, finely crafted steel sword with a golden hilt.';
-    if (id === '01') return 'An ancient enchanted spiraling relic.';
-    if (id === '08') return 'A wild forest mushroom plucked from the glade.';
-    if (id === '09') return 'A curious mushroom with brightly colored spots.';
-    if (id === '07') return 'A bouncy soccer ball ready for a kick.';
-    return 'A carried adventurer item.';
+    return getItemMetadata(ent.sprite?.id, ent.name).desc;
   }
 
   private initInventoryModal(): void {
     const modal = document.getElementById('inventory-modal');
     const closeBtn = document.getElementById('inventory-close-btn');
     const dropBtn = document.getElementById('btn-drop-item');
-    const proxPickupBtn = document.getElementById('btn-proximity-pickup');
 
     if (closeBtn) {
       closeBtn.addEventListener('click', () => this.toggleInventory(false));
@@ -688,9 +684,6 @@ class GameApp {
     }
     if (dropBtn) {
       dropBtn.addEventListener('click', () => this.dropSelectedItem());
-    }
-    if (proxPickupBtn) {
-      proxPickupBtn.addEventListener('click', () => this.pickupNearbyItem());
     }
   }
 
@@ -779,24 +772,29 @@ class GameApp {
     }
   }
 
+  private get playerGroundPos(): { x: number; y: number } {
+    return {
+      x: this.player.x,
+      y: this.player.y + this.player.height / 2 - 40,
+    };
+  }
+
   public dropSelectedItem(): void {
     if (this.selectedInventoryIndex === null) return;
-    if (this.selectedInventoryIndex < 0 || this.selectedInventoryIndex >= this.player.inventory.length) {
-      this.selectedInventoryIndex = null;
-      return;
-    }
 
-    const item = this.player.inventory.splice(this.selectedInventoryIndex, 1)[0];
-    this.selectedInventoryIndex = null;
+    // Drop via pure functional operation using ground contact position
+    const dropResult = dropItemFromInventory(
+      this.player.inventory,
+      this.selectedInventoryIndex,
+      this.playerGroundPos,
+      this.player.facing
+    );
+    if (!dropResult) return;
 
-    const offsetDist = 70;
-    let dropX = this.player.x;
-    let dropY = this.player.y;
-    if (this.player.facing === 'up') dropY -= offsetDist;
-    else if (this.player.facing === 'down') dropY += offsetDist;
-    else if (this.player.facing === 'left') dropX -= offsetDist;
-    else if (this.player.facing === 'right') dropX += offsetDist;
+    let dropX = dropResult.dropPosition.x;
+    let dropY = dropResult.dropPosition.y;
 
+    // Map bounds clamp
     if (this.mapLayer) {
       const cell = Engine.vectorToCell(dropX, dropY);
       if (cell.x < 0 || cell.x >= this.mapLayer.width || cell.y < 0 || cell.y >= this.mapLayer.height) {
@@ -805,103 +803,27 @@ class GameApp {
       }
     }
 
-    item.x = dropX - item.width / 2;
-    item.y = dropY - item.height / 2;
-    item.dropCooldownUntil = Date.now() + 1500;
+    dropResult.droppedItem.x = dropX - dropResult.droppedItem.width / 2;
+    dropResult.droppedItem.y = dropY - dropResult.droppedItem.height / 2;
 
-    this.worldEntities.push(item);
-    console.log(`Dropped item: ${this.getItemName(item)} at (${Math.round(dropX)}, ${Math.round(dropY)})`);
+    this.player.inventory = dropResult.inventory;
+    this.worldEntities.push(dropResult.droppedItem);
+    this.selectedInventoryIndex = null;
 
+    console.log(`Dropped item: ${this.getItemName(dropResult.droppedItem)} at (${Math.round(dropX)}, ${Math.round(dropY)})`);
     this.updateInventoryModalUI();
-    this.updateProximityPrompt();
   }
 
-  public pickupItemByIndex(index: number): void {
-    if (index < 0 || index >= this.worldEntities.length) return;
-    const ent = this.worldEntities[index];
-    if (!ent.isItem) return;
-    this.player.inventory.push(ent);
-    this.worldEntities.splice(index, 1);
-    console.log(`Picked up: ${this.getItemName(ent)}`);
-    this.updateInventoryModalUI();
-    this.updateProximityPrompt();
-  }
+  public pickupNearbyItem(radius: number = 200): void {
+    const candidate = findNearbyPickupCandidate(this.worldEntities, this.playerGroundPos, radius);
+    if (!candidate) return;
 
-  public pickupNearbyItem(): void {
-    const pickupRadius = 160;
-    let closestIndex = -1;
-    let closestDist = Infinity;
-
-    for (let i = 0; i < this.worldEntities.length; i++) {
-      const ent = this.worldEntities[i];
-      if (!ent.isItem) continue;
-      if (ent.dropCooldownUntil && Date.now() < ent.dropCooldownUntil) continue;
-
-      const itemCenterX = ent.x + ent.width / 2;
-      const itemCenterY = ent.y + ent.height / 2;
-      const dist = Math.hypot(this.player.x - itemCenterX, this.player.y - itemCenterY);
-      if (dist < pickupRadius && dist < closestDist) {
-        closestDist = dist;
-        closestIndex = i;
-      }
-    }
-
-    if (closestIndex !== -1) {
-      this.pickupItemByIndex(closestIndex);
-    }
-  }
-
-  public findNearbyItemAtWorldPos(worldX: number, worldY: number): number {
-    for (let i = this.worldEntities.length - 1; i >= 0; i--) {
-      const ent = this.worldEntities[i];
-      if (!ent.isItem) continue;
-      const itemCenterX = ent.x + ent.width / 2;
-      const itemCenterY = ent.y + ent.height / 2;
-      const dist = Math.hypot(worldX - itemCenterX, worldY - itemCenterY);
-      if (dist < 90) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  public updateProximityPrompt(): void {
-    const pickupRadius = 160;
-    let closestItem: WorldEntity | null = null;
-    let closestDist = Infinity;
-
-    for (const ent of this.worldEntities) {
-      if (!ent.isItem) continue;
-      if (ent.dropCooldownUntil && Date.now() < ent.dropCooldownUntil) continue;
-
-      const itemCenterX = ent.x + ent.width / 2;
-      const itemCenterY = ent.y + ent.height / 2;
-      const dist = Math.hypot(this.player.x - itemCenterX, this.player.y - itemCenterY);
-      if (dist < pickupRadius && dist < closestDist) {
-        closestDist = dist;
-        closestItem = ent;
-      }
-    }
-
-    const promptEl = document.getElementById('proximity-prompt');
-    const promptTextEl = document.getElementById('proximity-prompt-text');
-    const touchPickupBtn = document.getElementById('btn-pickup');
-
-    if (closestItem) {
-      const itemName = this.getItemName(closestItem);
-      if (promptTextEl) promptTextEl.textContent = `Pick up ${itemName} (P)`;
-      if (promptEl) promptEl.classList.remove('hidden');
-      if (touchPickupBtn) {
-        touchPickupBtn.classList.remove('hidden');
-        touchPickupBtn.classList.add('has-nearby');
-        touchPickupBtn.title = `Pick up ${itemName}`;
-      }
-    } else {
-      if (promptEl) promptEl.classList.add('hidden');
-      if (touchPickupBtn) {
-        touchPickupBtn.classList.remove('has-nearby');
-        touchPickupBtn.classList.add('hidden');
-      }
+    const result = pickupEntity(this.player.inventory, this.worldEntities, candidate.index);
+    if (result) {
+      this.player.inventory = result.inventory;
+      this.worldEntities = result.entities;
+      console.log(`Picked up item: ${this.getItemName(result.pickedItem)}`);
+      this.updateInventoryModalUI();
     }
   }
 
@@ -909,78 +831,11 @@ class GameApp {
     if (!this.mapLayer) return true;
     const cell = Engine.vectorToCell(worldX, worldY);
     if (cell.x < 0 || cell.x >= this.mapLayer.width || cell.y < 0 || cell.y >= this.mapLayer.height) {
-      return false; // Out of bounds is impassable
+      return false;
     }
     const tile = this.mapLayer.getTile(cell.x, cell.y);
     if (!tile) return false;
     return tile.slowFactor > 0;
-  }
-
-  private getEntityObstacleBox(ent: WorldEntity): { left: number; right: number; top: number; bottom: number } | null {
-    const id = ent.sprite?.id;
-    if (id === '02') {
-      return {
-        left: ent.x + ent.width * 0.32,
-        right: ent.x + ent.width * 0.68,
-        top: ent.y + ent.height * 0.65,
-        bottom: ent.y + ent.height * 0.90,
-      };
-    }
-    if (id === '03' || id === '04' || id === '05') {
-      return {
-        left: ent.x + ent.width * 0.15,
-        right: ent.x + ent.width * 0.85,
-        top: ent.y + ent.height * 0.35,
-        bottom: ent.y + ent.height * 0.85,
-      };
-    }
-    return null;
-  }
-
-  private canWalkTo(posX: number, posY: number, radiusX: number, radiusY: number): boolean {
-    const feetY = posY + this.player.height / 2 - 40;
-    const pLeft = posX - radiusX;
-    const pRight = posX + radiusX;
-    const pTop = feetY - radiusY;
-    const pBottom = feetY + radiusY;
-
-    if (
-      !this.isTileWalkable(pLeft, feetY) ||
-      !this.isTileWalkable(pRight, feetY) ||
-      !this.isTileWalkable(posX, pTop) ||
-      !this.isTileWalkable(posX, pBottom)
-    ) {
-      return false;
-    }
-
-    const curFeetY = this.player.y + this.player.height / 2 - 40;
-    const curLeft = this.player.x - radiusX;
-    const curRight = this.player.x + radiusX;
-    const curTop = curFeetY - radiusY;
-    const curBottom = curFeetY + radiusY;
-
-    for (const ent of this.worldEntities) {
-      const box = this.getEntityObstacleBox(ent);
-      if (!box) continue;
-
-      const collidesNext = pLeft < box.right && pRight > box.left && pTop < box.bottom && pBottom > box.top;
-      if (collidesNext) {
-        const collidesCur = curLeft < box.right && curRight > box.left && curTop < box.bottom && curBottom > box.top;
-        if (collidesCur) {
-          const obsCenterX = (box.left + box.right) / 2;
-          const obsCenterY = (box.top + box.bottom) / 2;
-          const curDist = Math.hypot(this.player.x - obsCenterX, curFeetY - obsCenterY);
-          const nextDist = Math.hypot(posX - obsCenterX, feetY - obsCenterY);
-          if (nextDist <= curDist) {
-            return false;
-          }
-        } else {
-          return false;
-        }
-      }
-    }
-
-    return true;
   }
 
   private update(deltaMs: number): void {
@@ -992,31 +847,11 @@ class GameApp {
     if (this.keysDown.has('KeyW') || this.keysDown.has('ArrowUp')) kdy -= 1;
     if (this.keysDown.has('KeyS') || this.keysDown.has('ArrowDown')) kdy += 1;
 
-    if (kdx !== 0 && kdy !== 0) {
-      const len = Math.hypot(kdx, kdy);
-      kdx /= len;
-      kdy /= len;
-    }
-
-    let dx = kdx + this.touchMovement.x;
-    let dy = kdy + this.touchMovement.y;
-    const mag = Math.hypot(dx, dy);
-
-    if (mag > 0.05) {
-      if (Math.abs(dx) > Math.abs(dy)) {
-        this.player.facing = dx > 0 ? 'right' : 'left';
-      } else {
-        this.player.facing = dy > 0 ? 'down' : 'up';
-      }
-
-      if (mag > 1.0) {
-        dx /= mag;
-        dy /= mag;
-      }
-    } else {
-      dx = 0;
-      dy = 0;
-    }
+    // Combine keyboard and touch inputs via pure function
+    const movement = combineMovementInputs(kdx, kdy, this.touchMovement.x, this.touchMovement.y);
+    this.player.facing = resolveFacing(movement.dx, movement.dy, this.player.facing);
+    const dx = movement.dx;
+    const dy = movement.dy;
 
     let currentSpeed = this.player.baseSpeed;
     const feetY = this.player.y + this.player.height / 2 - 40;
@@ -1034,8 +869,39 @@ class GameApp {
     const nextX = this.player.x + dx * currentSpeed;
     const nextY = this.player.y + dy * currentSpeed;
 
-    const canMoveX = dx === 0 || this.canWalkTo(nextX, this.player.y, feetRadiusX, feetRadiusY);
-    const canMoveY = dy === 0 || this.canWalkTo(this.player.x, nextY, feetRadiusX, feetRadiusY);
+    // Compute obstacle collision boxes via pure function
+    const obstacleBoxes = this.worldEntities
+      .map((ent) => getObstacleBoundingBox(ent.sprite?.id, ent.x, ent.y, ent.width, ent.height))
+      .filter((box): box is BoundingBox => box !== null);
+
+    const currentFeetPos = { x: this.player.x, y: feetY };
+    const checkTile = (x: number, y: number) => this.isTileWalkable(x, y);
+
+    const canMoveX =
+      dx === 0 ||
+      canWalkToPosition(
+        nextX,
+        this.player.y,
+        this.player.height,
+        feetRadiusX,
+        feetRadiusY,
+        checkTile,
+        obstacleBoxes,
+        currentFeetPos
+      );
+
+    const canMoveY =
+      dy === 0 ||
+      canWalkToPosition(
+        this.player.x,
+        nextY,
+        this.player.height,
+        feetRadiusX,
+        feetRadiusY,
+        checkTile,
+        obstacleBoxes,
+        currentFeetPos
+      );
 
     if (canMoveX) {
       this.player.x = nextX;
@@ -1050,23 +916,19 @@ class GameApp {
       this.updateCameraFollowUI();
     }
 
-    // Auto-pickup items if stepping near them (convenient for mobile and desktop)
+    // Zen Walk-over Auto-pickup: smoothly collects items within 140px of ground feet
     if (canMoveX || canMoveY) {
-      for (let i = this.worldEntities.length - 1; i >= 0; i--) {
-        const ent = this.worldEntities[i];
-        if (!ent.isItem) continue;
-        if (ent.dropCooldownUntil && Date.now() < ent.dropCooldownUntil) continue;
-        const itemCenterX = ent.x + ent.width / 2;
-        const itemCenterY = ent.y + ent.height / 2;
-        const dist = Math.hypot(this.player.x - itemCenterX, this.player.y - itemCenterY);
-        if (dist < 80) {
-          this.pickupItemByIndex(i);
-          break;
+      const walkCandidate = findNearbyPickupCandidate(this.worldEntities, this.playerGroundPos, 140);
+      if (walkCandidate) {
+        const pickupResult = pickupEntity(this.player.inventory, this.worldEntities, walkCandidate.index);
+        if (pickupResult) {
+          this.player.inventory = pickupResult.inventory;
+          this.worldEntities = pickupResult.entities;
+          console.log(`Auto-picked up: ${this.getItemName(pickupResult.pickedItem)}`);
+          this.updateInventoryModalUI();
         }
       }
     }
-
-    this.updateProximityPrompt();
 
     // Map boundary clamping
     if (this.mapLayer) {
@@ -1076,13 +938,13 @@ class GameApp {
       this.player.y = Math.max(256, Math.min(mapPixelHeight - 256, this.player.y));
     }
 
-    // 4. Update Camera (smoothly tracks player when follow is active; free when panned)
+    // Smooth camera tracking
     if (this.camera.follow) {
       this.camera.x += (this.player.x - this.camera.x) * 0.1;
       this.camera.y += (this.player.y - this.camera.y) * 0.1;
     }
 
-    // 5. Update Lightnings
+    // Update active lightnings
     for (let i = this.activeLightnings.length - 1; i >= 0; i--) {
       const bolt = this.activeLightnings[i];
       bolt.lifetime--;
@@ -1116,19 +978,18 @@ class GameApp {
   private render(): void {
     const { width, height } = this.canvas;
 
-    // Use terrain grass green background to eliminate dark seam bleed
+    // Grass green background to eliminate dark bleed
     this.ctx.fillStyle = '#469b00';
     this.ctx.fillRect(0, 0, width, height);
 
     if (!this.mapLayer) return;
 
     this.ctx.save();
-    // Center camera on screen with zoom transform
     this.ctx.translate(width / 2, height / 2);
     this.ctx.scale(this.camera.zoom, this.camera.zoom);
     this.ctx.translate(-Math.round(this.camera.x), -Math.round(this.camera.y));
 
-    // Visible world rectangle for culling
+    // Visible bounds culling
     const halfViewW = width / 2 / this.camera.zoom;
     const halfViewH = height / 2 / this.camera.zoom;
     const viewLeft = this.camera.x - halfViewW;
@@ -1136,7 +997,7 @@ class GameApp {
     const viewTop = this.camera.y - halfViewH;
     const viewBottom = this.camera.y + halfViewH;
 
-    // 1. Draw Map Tiles with Rotation (+1 px overlap to kill subpixel gap)
+    // 1. Draw Map Tiles with Rotation (+1px bleed eliminates subpixel gaps)
     for (let y = 0; y < this.mapLayer.height; y++) {
       for (let x = 0; x < this.mapLayer.width; x++) {
         const destX = x * GAME_TILE_SIZE;
@@ -1158,7 +1019,6 @@ class GameApp {
           this.ctx.save();
           this.ctx.translate(destX + GAME_TILE_SIZE / 2, destY + GAME_TILE_SIZE / 2);
           this.ctx.rotate((posture * Math.PI) / 2);
-          // +1px bleed completely eliminates black subpixel seams
           this.ctx.drawImage(
             tile.texture,
             -GAME_TILE_SIZE / 2,
@@ -1172,8 +1032,6 @@ class GameApp {
     }
 
     // 2. Y-Sorted Draw Queue (Character + World Sprites)
-    // Ordering logic: if center point of A is above center point of B, A is drawn behind B.
-    // If center points are equal, tie-break deterministically (by centerX then unique ID).
     type Renderable = {
       centerY: number;
       centerX: number;
@@ -1183,7 +1041,7 @@ class GameApp {
 
     const drawList: Renderable[] = [];
 
-    // Add Player to draw list (Anchored at feet ground contact for natural RPG depth sorting)
+    // Player renderable
     const playerFeetY = this.player.y + this.player.height / 2 - 40;
     drawList.push({
       centerY: playerFeetY,
@@ -1203,7 +1061,7 @@ class GameApp {
       },
     });
 
-    // Add World Entities to draw list
+    // World Entities renderables
     for (let i = 0; i < this.worldEntities.length; i++) {
       const ent = this.worldEntities[i];
       if (
@@ -1215,14 +1073,11 @@ class GameApp {
         continue;
       }
 
-      // Ground contact sorting anchor
       let entSortY = ent.y + ent.height / 2;
       const id = ent.sprite?.id;
       if (id === '02') {
-        // Tree trunk ground base
-        entSortY = ent.y + ent.height * 0.80;
+        entSortY = ent.y + ent.height * 0.8;
       } else if (id === '03' || id === '04' || id === '05') {
-        // Rock ground base
         entSortY = ent.y + ent.height * 0.65;
       }
 
@@ -1249,16 +1104,8 @@ class GameApp {
       });
     }
 
-    // Deterministic center-point depth sort
-    drawList.sort((a, b) => {
-      if (a.centerY !== b.centerY) {
-        return a.centerY - b.centerY;
-      }
-      if (a.centerX !== b.centerX) {
-        return a.centerX - b.centerX;
-      }
-      return a.id.localeCompare(b.id);
-    });
+    // Pure functional comparator for depth sorting
+    drawList.sort(compareRenderDepth);
 
     for (const item of drawList) {
       item.draw(this.ctx);
@@ -1299,18 +1146,11 @@ class GameApp {
 
     this.ctx.restore();
 
-    // 4. Dramatic Screen Flash Effect
+    // 4. Screen flash effect
     if (this.screenFlash > 0) {
       this.ctx.fillStyle = `rgba(255, 255, 255, ${this.screenFlash})`;
       this.ctx.fillRect(0, 0, width, height);
     }
-
-    // 5. Render In-Game UI Overlay
-    this.renderUI();
-  }
-
-  private renderUI(): void {
-    // In-game UI overlays (Inventory modal, prompts, buttons) are now managed via responsive DOM elements
   }
 }
 

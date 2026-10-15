@@ -63,4 +63,19 @@ export class MathHelper {
   public static pointInRect(p: Point, r: Rectangle): boolean {
     return p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
   }
+
+  public static snapToCellCenter(
+    cellX: number,
+    cellY: number,
+    tileWidth: number,
+    tileHeight: number,
+    itemWidth: number,
+    itemHeight: number
+  ): Point {
+    return {
+      x: cellX * tileWidth + (tileWidth - itemWidth) / 2,
+      y: cellY * tileHeight + (tileHeight - itemHeight) / 2,
+    };
+  }
 }
+

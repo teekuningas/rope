@@ -8,7 +8,7 @@
     />
     <title>Rope</title>
     <link rel="stylesheet" href="/src/game/styles/layout.css" />
-    <link rel="stylesheet" href="/src/game/styles/hud.css" />
+    <link rel="stylesheet" href="/src/game/styles/theme.css" />
   </head>
   <body>
     <div id="game-container">
@@ -23,28 +23,9 @@
           </div>
         </div>
 
-        <!-- Contextual Proximity Item Prompt -->
-        <div id="proximity-prompt" class="proximity-prompt hidden">
-          <button id="btn-proximity-pickup" class="proximity-btn" title="Pick Up Item (P)">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M7 11v-1a2 2 0 0 1 4 0v1"></path>
-              <path d="M11 11V7a2 2 0 0 1 4 0v4"></path>
-              <path d="M15 11V9a2 2 0 0 1 4 0v6a7 7 0 0 1-14 0v-4a2 2 0 0 1 4 0v1"></path>
-            </svg>
-            <span id="proximity-prompt-text">Pick up</span>
-          </button>
-        </div>
-
         <!-- Touch Action Buttons (Bottom Right) -->
         <div id="action-cluster">
           <div class="action-row auxiliary-actions">
-            <button id="btn-pickup" class="touch-btn sm-btn pickup-btn hidden" aria-label="Pick Up" title="Pick Up Item (P)">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M7 11v-1a2 2 0 0 1 4 0v1"></path>
-                <path d="M11 11V7a2 2 0 0 1 4 0v4"></path>
-                <path d="M15 11V9a2 2 0 0 1 4 0v6a7 7 0 0 1-14 0v-4a2 2 0 0 1 4 0v1"></path>
-              </svg>
-            </button>
             <button id="btn-zoom-in" class="touch-btn sm-btn" aria-label="Zoom In" title="Zoom In">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>

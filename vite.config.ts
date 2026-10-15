@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': resolve(import.meta.dirname, 'src/shared'),
+      '@core': resolve(import.meta.dirname, 'src/core'),
     },
   },
   build: {

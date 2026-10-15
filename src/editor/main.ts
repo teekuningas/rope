@@ -1,5 +1,6 @@
 import { AssetLoader } from '@shared/asset-loader';
-import { Camera2D } from '../core/camera';
+import { Camera2D } from '@core/camera';
+import { MathHelper } from '@core/math';
 import { Engine } from '@shared/engine';
 import { MapLayer } from '@shared/map-layer';
 import { Sprite, SpriteLayer, Sprites } from '@shared/sprite';
@@ -623,8 +624,9 @@ class MapEditorApp {
       let posX: number;
       let posY: number;
       if (useSnap && cell.x >= 0 && cell.x < this.mapLayer.width && cell.y >= 0 && cell.y < this.mapLayer.height) {
-        posX = cell.x * Engine.tileWidth + (Engine.tileWidth - sizePx) / 2;
-        posY = cell.y * Engine.tileHeight + (Engine.tileHeight - sizePx) / 2;
+        const snapped = MathHelper.snapToCellCenter(cell.x, cell.y, Engine.tileWidth, Engine.tileHeight, sizePx, sizePx);
+        posX = snapped.x;
+        posY = snapped.y;
       } else {
         posX = world.x - sizePx / 2;
         posY = world.y - sizePx / 2;
@@ -641,10 +643,9 @@ class MapEditorApp {
         this.mapLayer.setTile(cellX, cellY, this.selectedTile, this.tilePosture);
       } else if (this.activeMode === 'sprite' && this.selectedSprite) {
         const sizePx = this.selectedSprite.size * Engine.basicWidth;
-        const posX = cellX * Engine.tileWidth + (Engine.tileWidth - sizePx) / 2;
-        const posY = cellY * Engine.tileHeight + (Engine.tileHeight - sizePx) / 2;
+        const snapped = MathHelper.snapToCellCenter(cellX, cellY, Engine.tileWidth, Engine.tileHeight, sizePx, sizePx);
         const posture = this.selectedSprite.canRotate ? this.spritePosture : 0;
-        this.spriteLayer.add(posX, posY, this.selectedSprite, posture);
+        this.spriteLayer.add(snapped.x, snapped.y, this.selectedSprite, posture);
       }
     }
   }

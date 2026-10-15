@@ -15,7 +15,8 @@
 
     /* Path Aliases */
     "paths": {
-      "@shared/*": ["./src/shared/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@core/*": ["./src/core/*"]
     },
 
     /* Linting / Strictness */
