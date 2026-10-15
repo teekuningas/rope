@@ -336,7 +336,7 @@ class GameApp {
       btn.addEventListener('pointercancel', onUp);
     };
 
-    bindButton('btn-lightning', () => this.strikeLightningInFront());
+    bindButton('btn-pickup', () => this.pickupNearbyItem());
     bindButton('btn-inventory', () => this.toggleInventory());
     bindButton('btn-zoom-in', () => {
       this.camera.zoom = Math.min(1.0, this.camera.zoom + 0.25);
@@ -551,24 +551,6 @@ class GameApp {
         const centeredY = clickScreenY - this.canvas.height / 2;
         const worldX = this.camera.x + centeredX / this.camera.zoom;
         const worldY = this.camera.y + centeredY / this.camera.zoom;
-
-        // Proximity tap on item in world
-        const tapCandidate = findNearbyPickupCandidate(this.worldEntities, { x: worldX, y: worldY }, 90);
-        if (tapCandidate) {
-          const itemCenterX = tapCandidate.entity.x + tapCandidate.entity.width / 2;
-          const itemCenterY = tapCandidate.entity.y + tapCandidate.entity.height / 2;
-          const distToPlayer = Math.hypot(this.playerGroundPos.x - itemCenterX, this.playerGroundPos.y - itemCenterY);
-          if (distToPlayer <= 220) {
-            const result = pickupEntity(this.player.inventory, this.worldEntities, tapCandidate.index);
-            if (result) {
-              this.player.inventory = result.inventory;
-              this.worldEntities = result.entities;
-              console.log(`Tapped to pick up: ${this.getItemName(result.pickedItem)}`);
-              this.updateInventoryModalUI();
-              return;
-            }
-          }
-        }
 
         // Clean tap/click: strike lightning at world coordinate
         this.strikeLightning(worldX, worldY);
@@ -916,17 +898,15 @@ class GameApp {
       this.updateCameraFollowUI();
     }
 
-    // Zen Walk-over Auto-pickup: smoothly collects items within 140px of ground feet
-    if (canMoveX || canMoveY) {
-      const walkCandidate = findNearbyPickupCandidate(this.worldEntities, this.playerGroundPos, 140);
-      if (walkCandidate) {
-        const pickupResult = pickupEntity(this.player.inventory, this.worldEntities, walkCandidate.index);
-        if (pickupResult) {
-          this.player.inventory = pickupResult.inventory;
-          this.worldEntities = pickupResult.entities;
-          console.log(`Auto-picked up: ${this.getItemName(pickupResult.pickedItem)}`);
-          this.updateInventoryModalUI();
-        }
+    // Update pickup button highlight if an item is within pickup reach (200px)
+    const nearbyCandidate = findNearbyPickupCandidate(this.worldEntities, this.playerGroundPos, 200);
+    const pickupBtn = document.getElementById('btn-pickup');
+    if (pickupBtn) {
+      pickupBtn.classList.toggle('has-nearby', nearbyCandidate !== null);
+      if (nearbyCandidate) {
+        pickupBtn.title = `Pick up ${this.getItemName(nearbyCandidate.entity)} (P)`;
+      } else {
+        pickupBtn.title = 'Pick Up Item (P)';
       }
     }
 
