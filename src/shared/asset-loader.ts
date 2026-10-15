@@ -69,7 +69,7 @@ export class AssetLoader {
           this.loadImage(`${baseUrl}sprites/${sData.textureName.toLowerCase()}.png`),
           this.loadImage(`${baseUrl}sprites/${sData.textureName.toLowerCase()}2.png`),
         ]);
-        sprites.add(new AnimatedSprite([puu1, puu2], sData.size, sData.spriteId, 1, false));
+        sprites.add(new AnimatedSprite([puu1, puu2], sData.size, sData.spriteId, 1, false, sData.canRotate));
       } else if (sData.spriteId === '07') {
         const [p1, p2, p3, p4] = await Promise.all([
           this.loadImage(`${baseUrl}sprites/${sData.textureName.toLowerCase()}.png`),
@@ -77,11 +77,11 @@ export class AssetLoader {
           this.loadImage(`${baseUrl}sprites/${sData.textureName.toLowerCase()}3.png`),
           this.loadImage(`${baseUrl}sprites/${sData.textureName.toLowerCase()}4.png`),
         ]);
-        sprites.add(new AnimatedSprite([p1, p2, p3, p4], sData.size, sData.spriteId, 20, false));
+        sprites.add(new AnimatedSprite([p1, p2, p3, p4], sData.size, sData.spriteId, 20, false, sData.canRotate));
       } else {
         const imgUrl = `${baseUrl}sprites/${sData.textureName.toLowerCase()}.png`;
         const img = await this.loadImage(imgUrl);
-        const sprite = new Sprite(img, sData.size, sData.spriteId, sData.isItem);
+        const sprite = new Sprite(img, sData.size, sData.spriteId, sData.isItem, sData.canRotate);
         sprites.add(sprite);
       }
     }

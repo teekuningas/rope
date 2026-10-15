@@ -24,6 +24,7 @@ interface WorldEntity {
   sprite?: Sprite;
   texture?: HTMLImageElement;
   isItem?: boolean;
+  posture?: number;
   name?: string;
 }
 
@@ -67,13 +68,22 @@ class GameApp {
     y: 2300,
     zoom: 0.5,
     follow: true,
-    border: 50,
   };
 
   private keysDown: Set<string> = new Set();
   private mouse = { x: -1000, y: -1000 };
-  private mouseInsideCanvas: boolean = false;
   private showInventory: boolean = false;
+
+  private touchMovement = { x: 0, y: 0 };
+  private joystickPointerId: number | null = null;
+  private touchMode: 'auto' | 'on' | 'off' = 'auto';
+
+  // Canvas pointer navigation (drag to pan, pinch to zoom)
+  private activeCanvasPointers: Map<number, { x: number; y: number }> = new Map();
+  private canvasDragStart: { x: number; y: number; camX: number; camY: number } | null = null;
+  private canvasHasDragged = false;
+  private initialPinchDist: number | null = null;
+  private initialPinchZoom = 0.5;
 
   private activeLightnings: LightningStrike[] = [];
   private screenFlash: number = 0; // alpha for white flash
@@ -82,6 +92,7 @@ class GameApp {
     this.canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
     this.ctx = this.canvas.getContext('2d')!;
 
+    this.initTouchControls();
     this.bindEvents();
   }
 
@@ -110,10 +121,10 @@ class GameApp {
         this.bgAudio.loop = true;
       }
 
-      await this.loadMap('/assets/data/UusiMaailma.xml');
+      await this.loadMap('/assets/data/Default.xml');
 
       if (statusMsg) {
-        statusMsg.textContent = 'WASD / Arrows to move | Space to strike Lightning! | F for camera follow';
+        statusMsg.textContent = 'WASD to move · Space for lightning · Drag to pan';
         setTimeout(() => {
           if (statusMsg) statusMsg.style.display = 'none';
         }, 5000);
@@ -152,6 +163,7 @@ class GameApp {
         sprite: spriteObj,
         texture: spriteObj.texture ?? undefined,
         isItem: spriteObj.isItem,
+        posture: s.posture ?? 0,
         name: `Item ${spriteObj.id}`,
       });
     }
@@ -162,17 +174,250 @@ class GameApp {
     this.camera.y = 2300;
   }
 
+  public strikeLightningInFront(): void {
+    const strikeOffset = 250;
+    let targetX = this.player.x;
+    let targetY = this.player.y;
+    if (this.player.facing === 'up') targetY -= strikeOffset;
+    else if (this.player.facing === 'down') targetY += strikeOffset;
+    else if (this.player.facing === 'left') targetX -= strikeOffset;
+    else if (this.player.facing === 'right') targetX += strikeOffset;
+    this.strikeLightning(targetX, targetY);
+  }
+
+  private initTouchControls(): void {
+    const urlParams = new URLSearchParams(window.location.search);
+    const savedMode = localStorage.getItem('rope_touch_mode') as 'auto' | 'on' | 'off' | null;
+    if (urlParams.get('touch') === '1' || urlParams.get('touch') === 'on') {
+      this.touchMode = 'on';
+    } else if (savedMode === 'on' || savedMode === 'off' || savedMode === 'auto') {
+      this.touchMode = savedMode;
+    } else {
+      this.touchMode = 'auto';
+    }
+
+    const modeToggleBtn = document.getElementById('touch-mode-toggle');
+    const updateToggleBtnText = () => {
+      if (modeToggleBtn) {
+        modeToggleBtn.textContent = `Touch: ${this.touchMode.charAt(0).toUpperCase() + this.touchMode.slice(1)}`;
+      }
+    };
+    updateToggleBtnText();
+
+    if (modeToggleBtn) {
+      modeToggleBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.touchMode === 'auto') this.touchMode = 'on';
+        else if (this.touchMode === 'on') this.touchMode = 'off';
+        else this.touchMode = 'auto';
+        localStorage.setItem('rope_touch_mode', this.touchMode);
+        updateToggleBtnText();
+        this.applyTouchVisibility();
+      });
+    }
+
+    this.applyTouchVisibility();
+    window.addEventListener('resize', () => this.applyTouchVisibility());
+
+    // Virtual Joystick logic
+    const joystickZone = document.getElementById('joystick-zone');
+    const joystickBase = document.getElementById('joystick-base');
+    const joystickThumb = document.getElementById('joystick-thumb');
+
+    if (joystickZone && joystickBase && joystickThumb) {
+      joystickZone.addEventListener('contextmenu', (e) => e.preventDefault());
+      joystickZone.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+
+      const onPointerDown = (e: PointerEvent) => {
+        if (this.joystickPointerId !== null) return;
+        this.joystickPointerId = e.pointerId;
+        joystickZone.classList.add('active');
+        try {
+          joystickZone.setPointerCapture(e.pointerId);
+        } catch {}
+        this.startAudio();
+        this.updateJoystickPosition(e, joystickBase, joystickThumb);
+        e.preventDefault();
+        e.stopPropagation();
+      };
+
+      const onPointerMove = (e: PointerEvent) => {
+        if (e.pointerId === this.joystickPointerId) {
+          this.updateJoystickPosition(e, joystickBase, joystickThumb);
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      };
+
+      const onPointerUp = (e: PointerEvent) => {
+        if (e.pointerId === this.joystickPointerId) {
+          this.resetJoystick(joystickZone, joystickThumb);
+          try {
+            joystickZone.releasePointerCapture(e.pointerId);
+          } catch {}
+          this.joystickPointerId = null;
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      };
+
+      joystickZone.addEventListener('pointerdown', onPointerDown);
+      joystickZone.addEventListener('pointermove', onPointerMove);
+      joystickZone.addEventListener('pointerup', onPointerUp);
+      joystickZone.addEventListener('pointercancel', onPointerUp);
+
+      window.addEventListener('pointerup', (e) => {
+        if (e.pointerId === this.joystickPointerId) {
+          this.resetJoystick(joystickZone, joystickThumb);
+          this.joystickPointerId = null;
+        }
+      });
+      window.addEventListener('pointercancel', (e) => {
+        if (e.pointerId === this.joystickPointerId) {
+          this.resetJoystick(joystickZone, joystickThumb);
+          this.joystickPointerId = null;
+        }
+      });
+      window.addEventListener('blur', () => {
+        this.resetJoystick(joystickZone, joystickThumb);
+        this.joystickPointerId = null;
+        this.keysDown.clear();
+      });
+    }
+
+    // Touch Action Buttons
+    const bindButton = (id: string, action: () => void) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.addEventListener('contextmenu', (e) => e.preventDefault());
+      btn.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+
+      const onDown = (e: PointerEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.startAudio();
+        btn.classList.add('pressed');
+        try {
+          btn.setPointerCapture(e.pointerId);
+        } catch {}
+        action();
+      };
+
+      const onUp = (e: PointerEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        btn.classList.remove('pressed');
+        try {
+          btn.releasePointerCapture(e.pointerId);
+        } catch {}
+      };
+
+      btn.addEventListener('pointerdown', onDown);
+      btn.addEventListener('pointerup', onUp);
+      btn.addEventListener('pointercancel', onUp);
+    };
+
+    bindButton('btn-lightning', () => this.strikeLightningInFront());
+    bindButton('btn-inventory', () => {
+      this.showInventory = !this.showInventory;
+      this.updateInventoryBtnUI();
+    });
+    bindButton('btn-zoom-in', () => { this.camera.zoom = Math.min(1.0, this.camera.zoom + 0.25); });
+    bindButton('btn-zoom-out', () => { this.camera.zoom = Math.max(0.25, this.camera.zoom - 0.25); });
+
+    this.updateCameraFollowUI();
+    this.updateInventoryBtnUI();
+  }
+
+  public updateCameraFollowUI(): void {
+    this.updateCanvasCursor();
+  }
+
+  public updateCanvasCursor(isDragging: boolean = false): void {
+    if (isDragging) {
+      this.canvas.style.cursor = 'grabbing';
+    } else if (!this.camera.follow) {
+      this.canvas.style.cursor = 'grab';
+    } else {
+      this.canvas.style.cursor = 'crosshair';
+    }
+  }
+
+  public updateInventoryBtnUI(): void {
+    const btn = document.getElementById('btn-inventory');
+    if (btn) {
+      btn.classList.toggle('active', this.showInventory);
+    }
+  }
+
+  private applyTouchVisibility(): void {
+    const touchControlsEl = document.getElementById('touch-controls');
+    if (!touchControlsEl) return;
+
+    let shouldShow = false;
+    if (this.touchMode === 'on') {
+      shouldShow = true;
+    } else if (this.touchMode === 'off') {
+      shouldShow = false;
+    } else {
+      // auto mode: coarse pointer, touch capability, hover none, or small viewport
+      const isCoarse = window.matchMedia('(pointer: coarse)').matches;
+      const isHoverNone = window.matchMedia('(hover: none)').matches;
+      const hasTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+      const isSmallScreen = window.innerWidth <= 1024 || window.innerHeight <= 650;
+      shouldShow = isCoarse || isHoverNone || hasTouch || isSmallScreen;
+    }
+
+    if (shouldShow) {
+      touchControlsEl.classList.remove('touch-hidden');
+    } else {
+      touchControlsEl.classList.add('touch-hidden');
+    }
+  }
+
+  private updateJoystickPosition(e: PointerEvent, base: HTMLElement, thumb: HTMLElement): void {
+    const rect = base.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const maxRadius = rect.width / 2;
+
+    const rawDx = e.clientX - centerX;
+    const rawDy = e.clientY - centerY;
+    const dist = Math.hypot(rawDx, rawDy);
+
+    let clampedX = rawDx;
+    let clampedY = rawDy;
+    if (dist > maxRadius) {
+      clampedX = (rawDx / dist) * maxRadius;
+      clampedY = (rawDy / dist) * maxRadius;
+    }
+
+    thumb.style.transform = `translate(${clampedX}px, ${clampedY}px)`;
+    this.touchMovement.x = clampedX / maxRadius;
+    this.touchMovement.y = clampedY / maxRadius;
+  }
+
+  private resetJoystick(zone: HTMLElement, thumb: HTMLElement): void {
+    zone.classList.remove('active');
+    thumb.style.transform = 'translate(0px, 0px)';
+    this.touchMovement.x = 0;
+    this.touchMovement.y = 0;
+  }
+
   private bindEvents(): void {
     window.addEventListener('keydown', (e) => {
       this.keysDown.add(e.code);
       this.startAudio();
 
-      if (e.code === 'KeyF') {
+      if (e.code === 'KeyF' || e.code === 'KeyZ') {
         this.camera.follow = !this.camera.follow;
+        this.updateCameraFollowUI();
       }
 
       if (e.code === 'KeyI') {
         this.showInventory = !this.showInventory;
+        this.updateInventoryBtnUI();
       }
 
       if (e.code === 'PageUp' || e.code === 'Equal') {
@@ -189,14 +434,7 @@ class GameApp {
 
       // Space bar triggers Lightning strike in front of player
       if (e.code === 'Space') {
-        const strikeOffset = 250;
-        let targetX = this.player.x;
-        let targetY = this.player.y;
-        if (this.player.facing === 'up') targetY -= strikeOffset;
-        else if (this.player.facing === 'down') targetY += strikeOffset;
-        else if (this.player.facing === 'left') targetX -= strikeOffset;
-        else if (this.player.facing === 'right') targetX += strikeOffset;
-        this.strikeLightning(targetX, targetY);
+        this.strikeLightningInFront();
       }
     });
 
@@ -204,42 +442,120 @@ class GameApp {
       this.keysDown.delete(e.code);
     });
 
-    this.canvas.addEventListener('mouseenter', () => {
-      this.mouseInsideCanvas = true;
-    });
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
     this.canvas.addEventListener('mouseleave', () => {
-      this.mouseInsideCanvas = false;
       this.mouse.x = -1000;
       this.mouse.y = -1000;
     });
 
-    this.canvas.addEventListener('mousemove', (e) => {
-      this.mouseInsideCanvas = true;
+    // Pointer events on canvas: supports touch-drag panning, pinch zoom, and tap lightning
+    this.canvas.addEventListener('pointerdown', (e) => {
+      if (e.target !== this.canvas) return;
+      this.startAudio();
+
+      const rect = this.canvas.getBoundingClientRect();
+      const clickX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+      const clickY = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+
+      // Tap on or outside inventory modal to close
+      if (this.showInventory) {
+        const invW = 380;
+        const invH = 240;
+        const invX = (this.canvas.width - invW) / 2;
+        const invY = (this.canvas.height - invH) / 2;
+
+        const isInside = clickX >= invX && clickX <= invX + invW && clickY >= invY && clickY <= invY + invH;
+        const isCloseBtn = clickX >= invX + invW - 40 && clickX <= invX + invW && clickY >= invY && clickY <= invY + 45;
+
+        if (!isInside || isCloseBtn) {
+          this.showInventory = false;
+          this.updateInventoryBtnUI();
+          return;
+        }
+      }
+
+      this.activeCanvasPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (this.activeCanvasPointers.size === 1) {
+        this.canvasDragStart = { x: e.clientX, y: e.clientY, camX: this.camera.x, camY: this.camera.y };
+        this.canvasHasDragged = false;
+        this.initialPinchDist = null;
+      } else if (this.activeCanvasPointers.size === 2) {
+        const [p1, p2] = Array.from(this.activeCanvasPointers.values());
+        this.initialPinchDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        this.initialPinchZoom = this.camera.zoom;
+        this.canvasHasDragged = true;
+      }
+    });
+
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (this.activeCanvasPointers.has(e.pointerId)) {
+        this.activeCanvasPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
       const rect = this.canvas.getBoundingClientRect();
       const scaleX = this.canvas.width / rect.width;
       const scaleY = this.canvas.height / rect.height;
       this.mouse.x = (e.clientX - rect.left) * scaleX;
       this.mouse.y = (e.clientY - rect.top) * scaleY;
+
+      // Two-finger pinch-to-zoom
+      if (this.activeCanvasPointers.size === 2 && this.initialPinchDist !== null) {
+        const [p1, p2] = Array.from(this.activeCanvasPointers.values());
+        const currentDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        const ratio = currentDist / this.initialPinchDist;
+        this.camera.zoom = Math.min(1.0, Math.max(0.25, Math.round(this.initialPinchZoom * ratio * 20) / 20));
+        return;
+      }
+
+      // One-finger screen drag panning (Z-mode / free drag)
+      if (this.activeCanvasPointers.size === 1 && this.canvasDragStart) {
+        const dx = e.clientX - this.canvasDragStart.x;
+        const dy = e.clientY - this.canvasDragStart.y;
+        if (!this.canvasHasDragged && Math.hypot(dx, dy) > 8) {
+          this.canvasHasDragged = true;
+          this.camera.follow = false;
+          this.updateCameraFollowUI();
+        }
+        if (this.canvasHasDragged) {
+          this.updateCanvasCursor(true);
+          this.camera.x = this.canvasDragStart.camX - dx / this.camera.zoom;
+          this.camera.y = this.canvasDragStart.camY - dy / this.camera.zoom;
+        }
+      }
     });
 
-    this.canvas.addEventListener('click', (e) => {
-      this.startAudio();
+    const onCanvasPointerEnd = (e: PointerEvent) => {
+      this.updateCanvasCursor(false);
+      if (this.activeCanvasPointers.size === 1 && !this.canvasHasDragged && !this.showInventory) {
+        // Clean tap/click: strike lightning at world coordinate
+        const rect = this.canvas.getBoundingClientRect();
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        const clickScreenX = (e.clientX - rect.left) * scaleX;
+        const clickScreenY = (e.clientY - rect.top) * scaleY;
 
-      // Strike lightning at mouse world position
-      const rect = this.canvas.getBoundingClientRect();
-      const scaleX = this.canvas.width / rect.width;
-      const scaleY = this.canvas.height / rect.height;
-      const clickScreenX = (e.clientX - rect.left) * scaleX;
-      const clickScreenY = (e.clientY - rect.top) * scaleY;
+        const centeredX = clickScreenX - this.canvas.width / 2;
+        const centeredY = clickScreenY - this.canvas.height / 2;
+        const worldX = this.camera.x + centeredX / this.camera.zoom;
+        const worldY = this.camera.y + centeredY / this.camera.zoom;
 
-      const centeredX = clickScreenX - this.canvas.width / 2;
-      const centeredY = clickScreenY - this.canvas.height / 2;
-      const worldX = this.camera.x + centeredX / this.camera.zoom;
-      const worldY = this.camera.y + centeredY / this.camera.zoom;
+        this.strikeLightning(worldX, worldY);
+      }
 
-      this.strikeLightning(worldX, worldY);
-    });
+      this.activeCanvasPointers.delete(e.pointerId);
+      if (this.activeCanvasPointers.size < 2) {
+        this.initialPinchDist = null;
+      }
+      if (this.activeCanvasPointers.size === 0) {
+        this.canvasDragStart = null;
+        this.canvasHasDragged = false;
+      }
+    };
+
+    this.canvas.addEventListener('pointerup', onCanvasPointerEnd);
+    this.canvas.addEventListener('pointercancel', onCanvasPointerEnd);
   }
 
   private startAudio(): void {
@@ -420,30 +736,38 @@ class GameApp {
   }
 
   private update(deltaMs: number): void {
-    let dx = 0;
-    let dy = 0;
+    let kdx = 0;
+    let kdy = 0;
 
-    if (this.keysDown.has('KeyA') || this.keysDown.has('ArrowLeft')) {
-      dx -= 1;
-      this.player.facing = 'left';
-    }
-    if (this.keysDown.has('KeyD') || this.keysDown.has('ArrowRight')) {
-      dx += 1;
-      this.player.facing = 'right';
-    }
-    if (this.keysDown.has('KeyW') || this.keysDown.has('ArrowUp')) {
-      dy -= 1;
-      this.player.facing = 'up';
-    }
-    if (this.keysDown.has('KeyS') || this.keysDown.has('ArrowDown')) {
-      dy += 1;
-      this.player.facing = 'down';
+    if (this.keysDown.has('KeyA') || this.keysDown.has('ArrowLeft')) kdx -= 1;
+    if (this.keysDown.has('KeyD') || this.keysDown.has('ArrowRight')) kdx += 1;
+    if (this.keysDown.has('KeyW') || this.keysDown.has('ArrowUp')) kdy -= 1;
+    if (this.keysDown.has('KeyS') || this.keysDown.has('ArrowDown')) kdy += 1;
+
+    if (kdx !== 0 && kdy !== 0) {
+      const len = Math.hypot(kdx, kdy);
+      kdx /= len;
+      kdy /= len;
     }
 
-    if (dx !== 0 && dy !== 0) {
-      const len = Math.hypot(dx, dy);
-      dx /= len;
-      dy /= len;
+    let dx = kdx + this.touchMovement.x;
+    let dy = kdy + this.touchMovement.y;
+    const mag = Math.hypot(dx, dy);
+
+    if (mag > 0.05) {
+      if (Math.abs(dx) > Math.abs(dy)) {
+        this.player.facing = dx > 0 ? 'right' : 'left';
+      } else {
+        this.player.facing = dy > 0 ? 'down' : 'up';
+      }
+
+      if (mag > 1.0) {
+        dx /= mag;
+        dy /= mag;
+      }
+    } else {
+      dx = 0;
+      dy = 0;
     }
 
     let currentSpeed = this.player.baseSpeed;
@@ -472,6 +796,26 @@ class GameApp {
       this.player.y = nextY;
     }
 
+    // Auto re-engage camera follow if player begins moving
+    if ((canMoveX || canMoveY) && (dx !== 0 || dy !== 0) && !this.camera.follow) {
+      this.camera.follow = true;
+      this.updateCameraFollowUI();
+    }
+
+    // Auto-pickup items if stepping near them (convenient for mobile and desktop)
+    if (canMoveX || canMoveY) {
+      for (let i = this.worldEntities.length - 1; i >= 0; i--) {
+        const ent = this.worldEntities[i];
+        if (!ent.isItem) continue;
+        const dist = Math.hypot(this.player.x - ent.x, this.player.y - ent.y);
+        if (dist < 90) {
+          this.player.inventory.push(ent);
+          this.worldEntities.splice(i, 1);
+          break;
+        }
+      }
+    }
+
     // Map boundary clamping
     if (this.mapLayer) {
       const mapPixelWidth = this.mapLayer.width * GAME_TILE_SIZE;
@@ -480,19 +824,10 @@ class GameApp {
       this.player.y = Math.max(256, Math.min(mapPixelHeight - 256, this.player.y));
     }
 
-    // 4. Update Camera
+    // 4. Update Camera (smoothly tracks player when follow is active; free when panned)
     if (this.camera.follow) {
       this.camera.x += (this.player.x - this.camera.x) * 0.1;
       this.camera.y += (this.player.y - this.camera.y) * 0.1;
-    } else if (this.mouseInsideCanvas) {
-      const w = this.canvas.width;
-      const h = this.canvas.height;
-      const camSpeed = 14 / this.camera.zoom;
-
-      if (this.mouse.x >= 0 && this.mouse.x < this.camera.border) this.camera.x -= camSpeed;
-      if (this.mouse.x <= w && this.mouse.x > w - this.camera.border) this.camera.x += camSpeed;
-      if (this.mouse.y >= 0 && this.mouse.y < this.camera.border) this.camera.y -= camSpeed;
-      if (this.mouse.y <= h && this.mouse.y > h - this.camera.border) this.camera.y += camSpeed;
     }
 
     // 5. Update Lightnings
@@ -648,7 +983,15 @@ class GameApp {
         draw: (ctx) => {
           const tex = ent.sprite?.texture ?? ent.texture;
           if (tex && tex.complete) {
-            ctx.drawImage(tex, Math.round(ent.x), Math.round(ent.y), ent.width, ent.height);
+            if (ent.posture) {
+              ctx.save();
+              ctx.translate(Math.round(ent.x + ent.width / 2), Math.round(ent.y + ent.height / 2));
+              ctx.rotate((ent.posture * Math.PI) / 2);
+              ctx.drawImage(tex, -Math.round(ent.width / 2), -Math.round(ent.height / 2), ent.width, ent.height);
+              ctx.restore();
+            } else {
+              ctx.drawImage(tex, Math.round(ent.x), Math.round(ent.y), ent.width, ent.height);
+            }
           }
         },
       });
@@ -716,43 +1059,76 @@ class GameApp {
 
   private renderUI(): void {
     if (this.showInventory) {
-      this.ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-      this.ctx.strokeStyle = '#38bdf8';
-      this.ctx.lineWidth = 2;
-
-      const invW = 400;
-      const invH = 260;
+      const invW = 380;
+      const invH = 240;
       const invX = (this.canvas.width - invW) / 2;
       const invY = (this.canvas.height - invH) / 2;
 
-      this.ctx.fillRect(invX, invY, invW, invH);
-      this.ctx.strokeRect(invX, invY, invW, invH);
+      // Subtle backdrop shadow
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-      this.ctx.fillStyle = '#f8fafc';
-      this.ctx.font = 'bold 18px sans-serif';
-      this.ctx.fillText('Inventory (Press I to close)', invX + 20, invY + 35);
+      // Modal surface (Pastel zen slate)
+      this.ctx.fillStyle = 'rgba(21, 25, 30, 0.95)';
+      this.ctx.strokeStyle = 'rgba(141, 164, 184, 0.25)';
+      this.ctx.lineWidth = 1.5;
+
+      this.ctx.beginPath();
+      if (typeof this.ctx.roundRect === 'function') {
+        this.ctx.roundRect(invX, invY, invW, invH, 12);
+      } else {
+        this.ctx.rect(invX, invY, invW, invH);
+      }
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Header title: Quiet, minimal "Inventory"
+      this.ctx.fillStyle = '#dbe2e6';
+      this.ctx.font = '500 16px -apple-system, BlinkMacSystemFont, "Inter", sans-serif';
+      this.ctx.fillText('Inventory', invX + 24, invY + 36);
+
+      // Close '×' icon at top right
+      this.ctx.fillStyle = '#8da4b8';
+      this.ctx.font = '300 20px sans-serif';
+      this.ctx.fillText('×', invX + invW - 32, invY + 34);
+
+      // Subtle divider line
+      this.ctx.strokeStyle = 'rgba(141, 164, 184, 0.12)';
+      this.ctx.beginPath();
+      this.ctx.moveTo(invX + 20, invY + 48);
+      this.ctx.lineTo(invX + invW - 20, invY + 48);
+      this.ctx.stroke();
 
       if (this.player.inventory.length === 0) {
-        this.ctx.fillStyle = '#94a3b8';
-        this.ctx.font = '14px sans-serif';
-        this.ctx.fillText('Backpack empty. Walk near an item & press P.', invX + 20, invY + 70);
+        // Minimalist empty state
+        this.ctx.fillStyle = '#647380';
+        this.ctx.font = '14px -apple-system, BlinkMacSystemFont, "Inter", sans-serif';
+        this.ctx.fillText('Empty', invX + 24, invY + 84);
       } else {
-        let slotX = invX + 20;
-        let slotY = invY + 60;
+        let slotX = invX + 24;
+        let slotY = invY + 64;
         for (const item of this.player.inventory) {
-          this.ctx.fillStyle = '#1e293b';
-          this.ctx.fillRect(slotX, slotY, 64, 64);
-          this.ctx.strokeStyle = '#475569';
-          this.ctx.strokeRect(slotX, slotY, 64, 64);
+          this.ctx.fillStyle = 'rgba(28, 34, 43, 0.9)';
+          this.ctx.strokeStyle = 'rgba(141, 164, 184, 0.2)';
+          this.ctx.lineWidth = 1;
+
+          this.ctx.beginPath();
+          if (typeof this.ctx.roundRect === 'function') {
+            this.ctx.roundRect(slotX, slotY, 60, 60, 8);
+          } else {
+            this.ctx.rect(slotX, slotY, 60, 60);
+          }
+          this.ctx.fill();
+          this.ctx.stroke();
 
           if (item.texture && item.texture.complete) {
-            this.ctx.drawImage(item.texture, slotX + 4, slotY + 4, 56, 56);
+            this.ctx.drawImage(item.texture, slotX + 4, slotY + 4, 52, 52);
           }
 
-          slotX += 74;
-          if (slotX + 64 > invX + invW - 20) {
-            slotX = invX + 20;
-            slotY += 74;
+          slotX += 70;
+          if (slotX + 60 > invX + invW - 20) {
+            slotX = invX + 24;
+            slotY += 70;
           }
         }
       }

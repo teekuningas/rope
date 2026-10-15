@@ -11,9 +11,10 @@
     <header>
       <div class="brand">
         <h1>Editor</h1>
-        <span class="map-name" id="current-map-title">Maailma</span>
+        <span class="map-name" id="current-map-title">Default</span>
       </div>
       <div class="toolbar-buttons">
+        <button id="btn-snap" class="btn-tool active" title="Toggle Snap to Tile Center (G)">Snap: Center</button>
         <button id="btn-new-map" class="btn-tool">New</button>
         <button id="btn-open-map" class="btn-tool">Open</button>
         <button id="btn-save-map" class="btn-tool primary">Save</button>
@@ -49,7 +50,7 @@
     <footer>
       <div id="status-coords">0, 0</div>
       <div class="controls-hint">
-        WASD pan &middot; Left paint &middot; Right erase &middot; Wheel zoom
+        WASD pan &middot; Left paint &middot; Right erase &middot; R rotate &middot; S snap &middot; Wheel zoom
       </div>
       <div id="status-map-size">10 &times; 10</div>
     </footer>

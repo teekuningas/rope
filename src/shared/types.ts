@@ -25,6 +25,7 @@ export interface SpriteData {
   textureName: string;
   size: number;
   isItem: boolean;
+  canRotate?: boolean;
 }
 
 export interface SpritesData {
@@ -44,6 +45,7 @@ export interface SpriteMapData {
   spriteId: string;
   positionX: number;
   positionY: number;
+  posture?: number; // 0, 1, 2, 3 (multiples of 90 degrees)
 }
 
 export interface MapData {

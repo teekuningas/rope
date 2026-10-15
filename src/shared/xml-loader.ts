@@ -32,12 +32,18 @@ export class XmlLoader {
       const textureName = node.querySelector('textureName')?.textContent?.trim() ?? '';
       const sizeStr = node.querySelector('size')?.textContent?.trim() ?? '1';
       const isItemStr = node.querySelector('isItem')?.textContent?.trim()?.toLowerCase() ?? 'false';
+      const isItem = isItemStr === 'true';
+      const canRotateNode = node.querySelector('canRotate');
+      const canRotate = canRotateNode !== null
+        ? canRotateNode.textContent?.trim()?.toLowerCase() === 'true'
+        : isItem;
 
       sprites.push({
         spriteId,
         textureName,
         size: parseInt(sizeStr, 10) || 1,
-        isItem: isItemStr === 'true',
+        isItem,
+        canRotate,
       });
     });
 
@@ -76,10 +82,13 @@ export class XmlLoader {
       const spriteId = sNode.querySelector('spriteId')?.textContent?.trim() ?? '';
       const posX = parseInt(sNode.querySelector('position_x')?.textContent?.trim() ?? '0', 10);
       const posY = parseInt(sNode.querySelector('position_y')?.textContent?.trim() ?? '0', 10);
+      const postureStr = sNode.querySelector('posture')?.textContent?.trim();
+      const posture = postureStr !== undefined ? parseInt(postureStr, 10) || 0 : 0;
       sprites.push({
         spriteId,
         positionX: posX,
         positionY: posY,
+        posture,
       });
     });
 
@@ -123,6 +132,9 @@ export class XmlLoader {
       lines.push(`        <spriteId>${s.spriteId}</spriteId>`);
       lines.push(`        <position_x>${Math.round(s.positionX)}</position_x>`);
       lines.push(`        <position_y>${Math.round(s.positionY)}</position_y>`);
+      if (s.posture && s.posture > 0) {
+        lines.push(`        <posture>${s.posture}</posture>`);
+      }
       lines.push('      </Item>');
     }
 

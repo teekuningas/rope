@@ -45,6 +45,19 @@ button.btn-tool:hover {
   border-color: #48586c;
 }
 
+button.btn-tool.active {
+  background: #2a373f;
+  border-color: #486576;
+  color: #cbe3f5;
+}
+
+button.btn-tool:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  border-color: #28303a;
+  background: #191e24;
+}
+
 button.btn-tool.primary {
   background: #3e5246;
   border-color: #526c5d;

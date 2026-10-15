@@ -37,4 +37,69 @@ canvas#game-canvas {
   object-fit: contain;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Mobile, Coarse Pointer, & Responsive Layout (Portrait & Landscape) */
+@media (pointer: coarse), (max-width: 1024px), (max-height: 650px), (hover: none) {
+  body {
+    padding: 0;
+    margin: 0;
+    width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
+    justify-content: flex-start;
+    align-items: center;
+    touch-action: none;
+    -webkit-touch-callout: none;
+  }
+
+  #game-container {
+    width: 100vw;
+    height: 100dvh;
+    max-width: 100vw;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    aspect-ratio: auto;
+  }
+
+  /* Portrait mode: Center canvas in the upper area with generous thumb clearance below */
+  @media (orientation: portrait) {
+    #game-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding-top: max(24px, env(safe-area-inset-top));
+      padding-bottom: 140px;
+    }
+
+    canvas#game-canvas {
+      width: 100vw;
+      height: 75vw;
+      max-height: 55vh;
+      object-fit: contain;
+    }
+  }
+
+  /* Landscape mode: Center canvas vertically, allowing thumb space on left/right edges */
+  @media (orientation: landscape) {
+    #game-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    canvas#game-canvas {
+      height: 100dvh;
+      width: calc(100dvh * 4 / 3);
+      max-width: 100vw;
+      object-fit: contain;
+    }
+  }
 }

@@ -19,7 +19,7 @@ class MapEditorApp {
   private mapLayer!: MapLayer;
   private spriteLayer!: SpriteLayer;
 
-  private mapName: string = 'Maailma';
+  private mapName: string = 'Default';
   private camera: Camera2D = new Camera2D();
   private keysDown: Set<string> = new Set();
 
@@ -27,6 +27,8 @@ class MapEditorApp {
   private selectedTile: Tile | null = null;
   private selectedSprite: Sprite | null = null;
   private tilePosture: number = 0;
+  private spritePosture: number = 0;
+  private snapToCenter: boolean = true;
 
   private mouse = { x: 0, y: 0, isDown: false, button: 0 };
   private isMiddleDragging: boolean = false;
@@ -58,12 +60,13 @@ class MapEditorApp {
       // Select first tile by default (skip '01' karttakehys if possible)
       const firstTile = this.tiles.listOfTiles.find((t) => t.id !== '01') ?? this.tiles.listOfTiles[0];
       this.selectTile(firstTile);
+      this.updateSnapUI();
 
       // Default editor zoom: 0.25 (displays 512px tiles at 128px on screen)
       this.camera.zoom = 0.25;
 
       // Load initial sample map
-      await this.loadMapFromUrl('/assets/data/Maailma.xml');
+      await this.loadMapFromUrl('/assets/data/Default.xml');
 
       // Center camera on map
       this.centerCameraOnMap();
@@ -108,6 +111,9 @@ class MapEditorApp {
   private selectSprite(sprite: Sprite): void {
     this.activeMode = 'sprite';
     this.selectedSprite = sprite;
+    if (!sprite.canRotate) {
+      this.spritePosture = 0;
+    }
     this.updatePreview();
 
     document.querySelectorAll('#palette-sprites .palette-item').forEach((el) => {
@@ -118,15 +124,36 @@ class MapEditorApp {
     });
   }
 
-  private rotateTile(): void {
-    this.tilePosture = (this.tilePosture + 1) % 4;
-    this.updatePreview();
+  private rotateSelection(): void {
+    if (this.activeMode === 'tile') {
+      this.tilePosture = (this.tilePosture + 1) % 4;
+      this.updatePreview();
+    } else if (this.activeMode === 'sprite' && this.selectedSprite) {
+      if (this.selectedSprite.canRotate) {
+        this.spritePosture = (this.spritePosture + 1) % 4;
+        this.updatePreview();
+      }
+    }
+  }
+
+  private toggleSnap(): void {
+    this.snapToCenter = !this.snapToCenter;
+    this.updateSnapUI();
+  }
+
+  private updateSnapUI(): void {
+    const btn = document.getElementById('btn-snap');
+    if (btn) {
+      btn.classList.toggle('active', this.snapToCenter);
+      btn.textContent = this.snapToCenter ? 'Snap: Center' : 'Snap: Free';
+    }
   }
 
   private updatePreview(): void {
     const previewImg = document.getElementById('active-preview-img') as HTMLImageElement;
     const nameLabel = document.getElementById('active-item-name')!;
     const rotLabel = document.getElementById('active-item-rotation')!;
+    const rotateBtn = document.getElementById('btn-rotate') as HTMLButtonElement | null;
 
     if (this.activeMode === 'tile' && this.selectedTile) {
       if (this.selectedTile.texture) {
@@ -135,13 +162,32 @@ class MapEditorApp {
       previewImg.style.transform = `rotate(${this.tilePosture * 90}deg)`;
       nameLabel.textContent = this.selectedTile.name || `Tile ${this.selectedTile.id}`;
       rotLabel.textContent = `${this.tilePosture * 90}°`;
+      if (rotateBtn) {
+        rotateBtn.disabled = false;
+        rotateBtn.title = 'Rotate (R)';
+      }
     } else if (this.activeMode === 'sprite' && this.selectedSprite) {
       if (this.selectedSprite.texture) {
         previewImg.src = this.selectedSprite.texture.src;
       }
-      previewImg.style.transform = 'none';
-      nameLabel.textContent = `Sprite ${this.selectedSprite.id}`;
-      rotLabel.textContent = `Size ${this.selectedSprite.size}`;
+      const prefix = this.selectedSprite.isItem ? 'Item' : 'Sprite';
+      nameLabel.textContent = `${prefix} ${this.selectedSprite.id}`;
+
+      if (this.selectedSprite.canRotate) {
+        previewImg.style.transform = `rotate(${this.spritePosture * 90}deg)`;
+        rotLabel.textContent = `${this.spritePosture * 90}° (Size ${this.selectedSprite.size})`;
+        if (rotateBtn) {
+          rotateBtn.disabled = false;
+          rotateBtn.title = 'Rotate (R)';
+        }
+      } else {
+        previewImg.style.transform = 'none';
+        rotLabel.textContent = `Fixed (Size ${this.selectedSprite.size})`;
+        if (rotateBtn) {
+          rotateBtn.disabled = true;
+          rotateBtn.title = 'This sprite cannot be rotated';
+        }
+      }
     }
   }
 
@@ -226,7 +272,7 @@ class MapEditorApp {
     this.spriteLayer = new SpriteLayer();
     for (const s of mapData.sprites) {
       const spriteObj = this.sprites.getSpriteWithId(s.spriteId);
-      this.spriteLayer.add(s.positionX, s.positionY, spriteObj);
+      this.spriteLayer.add(s.positionX, s.positionY, spriteObj, s.posture ?? 0);
     }
 
     this.centerCameraOnMap();
@@ -257,6 +303,7 @@ class MapEditorApp {
         spriteId: unit.sprite.id,
         positionX: unit.position.x,
         positionY: unit.position.y,
+        posture: unit.posture,
       });
     }
 
@@ -278,7 +325,12 @@ class MapEditorApp {
 
       // Rotate posture with 'R'
       if (e.code === 'KeyR') {
-        this.rotateTile();
+        this.rotateSelection();
+      }
+
+      // Toggle grid snapping with 'G'
+      if (e.code === 'KeyG' && !e.ctrlKey && !e.metaKey) {
+        this.toggleSnap();
       }
 
       // Laptop Mouse Simulation: Arrow keys navigate map cells
@@ -350,7 +402,7 @@ class MapEditorApp {
         this.dragStart = { x: e.clientX, y: e.clientY };
       } else if (e.button === 0) {
         // Left click: place tile or sprite
-        this.applyToolAtMouse();
+        this.applyToolAtMouse(e);
       } else if (e.button === 2) {
         // Right click: delete sprite under cursor
         this.deleteSpriteAtMouse();
@@ -375,7 +427,7 @@ class MapEditorApp {
         this.dragStart = { x: e.clientX, y: e.clientY };
       } else if (this.mouse.isDown && this.mouse.button === 0 && this.activeMode === 'tile') {
         // Paint drag for tiles
-        this.applyToolAtMouse();
+        this.applyToolAtMouse(e);
       }
 
       this.updateCoordsStatus();
@@ -415,18 +467,29 @@ class MapEditorApp {
     }
   }
 
-  private applyToolAtMouse(): void {
+  private applyToolAtMouse(e?: MouseEvent): void {
     if (!this.mapLayer) return;
     const world = this.camera.screenToWorld(this.mouse.x, this.mouse.y);
+    const cell = Engine.vectorToCell(world.x, world.y);
 
     if (this.activeMode === 'tile' && this.selectedTile) {
-      const cell = Engine.vectorToCell(world.x, world.y);
       this.applyToolAtCell(cell.x, cell.y);
     } else if (this.activeMode === 'sprite' && this.selectedSprite) {
       const sizePx = this.selectedSprite.size * Engine.basicWidth;
-      const posX = world.x - sizePx / 2;
-      const posY = world.y - sizePx / 2;
-      this.spriteLayer.add(posX, posY, this.selectedSprite);
+      const posture = this.selectedSprite.canRotate ? this.spritePosture : 0;
+      const useSnap = e?.shiftKey ? !this.snapToCenter : this.snapToCenter;
+
+      let posX: number;
+      let posY: number;
+      if (useSnap && cell.x >= 0 && cell.x < this.mapLayer.width && cell.y >= 0 && cell.y < this.mapLayer.height) {
+        posX = cell.x * Engine.tileWidth + (Engine.tileWidth - sizePx) / 2;
+        posY = cell.y * Engine.tileHeight + (Engine.tileHeight - sizePx) / 2;
+      } else {
+        posX = world.x - sizePx / 2;
+        posY = world.y - sizePx / 2;
+      }
+
+      this.spriteLayer.add(posX, posY, this.selectedSprite, posture);
     }
   }
 
@@ -439,7 +502,8 @@ class MapEditorApp {
         const sizePx = this.selectedSprite.size * Engine.basicWidth;
         const posX = cellX * Engine.tileWidth + (Engine.tileWidth - sizePx) / 2;
         const posY = cellY * Engine.tileHeight + (Engine.tileHeight - sizePx) / 2;
-        this.spriteLayer.add(posX, posY, this.selectedSprite);
+        const posture = this.selectedSprite.canRotate ? this.spritePosture : 0;
+        this.spriteLayer.add(posX, posY, this.selectedSprite, posture);
       }
     }
   }
@@ -449,7 +513,8 @@ class MapEditorApp {
 
     for (let i = this.spriteLayer.layer.length - 1; i >= 0; i--) {
       const unit = this.spriteLayer.layer[i];
-      const cell = Engine.vectorToCell(unit.position.x, unit.position.y);
+      const sizePx = unit.sprite.size * Engine.basicWidth;
+      const cell = Engine.vectorToCell(unit.position.x + sizePx / 2, unit.position.y + sizePx / 2);
       if (cell.x === cellX && cell.y === cellY) {
         this.spriteLayer.remove(unit);
         break;
@@ -501,7 +566,12 @@ class MapEditorApp {
       }
     });
 
-    document.getElementById('btn-rotate')!.addEventListener('click', () => this.rotateTile());
+    const btnSnap = document.getElementById('btn-snap');
+    if (btnSnap) {
+      btnSnap.addEventListener('click', () => this.toggleSnap());
+    }
+
+    document.getElementById('btn-rotate')!.addEventListener('click', () => this.rotateSelection());
     document.getElementById('btn-save-map')!.addEventListener('click', () => this.saveMap());
 
     const fileInput = document.getElementById('file-input-map') as HTMLInputElement;
@@ -647,7 +717,15 @@ class MapEditorApp {
         }
 
         if (sprite.texture && sprite.texture.complete) {
-          this.ctx.drawImage(sprite.texture, unit.position.x, unit.position.y, sizePx, sizePx);
+          if (unit.posture) {
+            this.ctx.save();
+            this.ctx.translate(unit.position.x + sizePx / 2, unit.position.y + sizePx / 2);
+            this.ctx.rotate((unit.posture * Math.PI) / 2);
+            this.ctx.drawImage(sprite.texture, -sizePx / 2, -sizePx / 2, sizePx, sizePx);
+            this.ctx.restore();
+          } else {
+            this.ctx.drawImage(sprite.texture, unit.position.x, unit.position.y, sizePx, sizePx);
+          }
         }
       }
     }
@@ -693,12 +771,34 @@ class MapEditorApp {
       this.ctx.strokeRect(destX, destY, Engine.tileWidth, Engine.tileHeight);
     } else if (this.activeMode === 'sprite' && this.selectedSprite?.texture?.complete) {
       const sizePx = this.selectedSprite.size * Engine.basicWidth;
-      const posX = targetWorldX - sizePx / 2;
-      const posY = targetWorldY - sizePx / 2;
+      const posture = this.selectedSprite.canRotate ? this.spritePosture : 0;
+      const cell = Engine.vectorToCell(targetWorldX, targetWorldY);
+      const isInside = cell.x >= 0 && cell.x < this.mapLayer.width && cell.y >= 0 && cell.y < this.mapLayer.height;
+
+      let posX: number;
+      let posY: number;
+      if (this.snapToCenter && isInside) {
+        posX = cell.x * Engine.tileWidth + (Engine.tileWidth - sizePx) / 2;
+        posY = cell.y * Engine.tileHeight + (Engine.tileHeight - sizePx) / 2;
+
+        // Subtle tile snapped frame indicator
+        this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+        this.ctx.lineWidth = 1.5 / this.camera.zoom;
+        this.ctx.strokeRect(cell.x * Engine.tileWidth, cell.y * Engine.tileHeight, Engine.tileWidth, Engine.tileHeight);
+      } else {
+        posX = targetWorldX - sizePx / 2;
+        posY = targetWorldY - sizePx / 2;
+      }
 
       this.ctx.save();
       this.ctx.globalAlpha = 0.65;
-      this.ctx.drawImage(this.selectedSprite.texture, posX, posY, sizePx, sizePx);
+      if (posture) {
+        this.ctx.translate(posX + sizePx / 2, posY + sizePx / 2);
+        this.ctx.rotate((posture * Math.PI) / 2);
+        this.ctx.drawImage(this.selectedSprite.texture, -sizePx / 2, -sizePx / 2, sizePx, sizePx);
+      } else {
+        this.ctx.drawImage(this.selectedSprite.texture, posX, posY, sizePx, sizePx);
+      }
       this.ctx.restore();
 
       this.ctx.strokeStyle = '#38bdf8';

@@ -5,6 +5,7 @@ export class Sprite {
   protected _size: number;
   protected _spriteId: string;
   protected _isItem: boolean;
+  protected _canRotate: boolean;
 
   public get texture(): HTMLImageElement | null {
     return this._texture;
@@ -22,16 +23,22 @@ export class Sprite {
     return this._isItem;
   }
 
+  public get canRotate(): boolean {
+    return this._canRotate;
+  }
+
   constructor(
     texture: HTMLImageElement | null,
     size: number,
     spriteId: string,
-    isItem: boolean = false
+    isItem: boolean = false,
+    canRotate?: boolean
   ) {
     this._texture = texture;
     this._size = size;
     this._spriteId = spriteId;
     this._isItem = isItem;
+    this._canRotate = canRotate ?? isItem;
   }
 
   public getId(): string {
@@ -87,8 +94,15 @@ export class Animation {
 export class AnimatedSprite extends Sprite {
   private animation: Animation;
 
-  constructor(textures: HTMLImageElement[], size: number, spriteId: string, fps: number, isItem: boolean = false) {
-    super(textures[0] ?? null, size, spriteId, isItem);
+  constructor(
+    textures: HTMLImageElement[],
+    size: number,
+    spriteId: string,
+    fps: number,
+    isItem: boolean = false,
+    canRotate?: boolean
+  ) {
+    super(textures[0] ?? null, size, spriteId, isItem, canRotate);
     this.animation = new Animation(textures, fps);
   }
 
@@ -104,10 +118,12 @@ export class AnimatedSprite extends Sprite {
 export class SpriteUnit {
   private _location: { x: number; y: number };
   private _sprite: Sprite;
+  private _posture: number;
 
-  constructor(x: number, y: number, sprite: Sprite) {
+  constructor(x: number, y: number, sprite: Sprite, posture: number = 0) {
     this._location = { x, y };
     this._sprite = sprite;
+    this._posture = posture;
   }
 
   public get position(): { x: number; y: number } {
@@ -121,6 +137,14 @@ export class SpriteUnit {
   public get sprite(): Sprite {
     return this._sprite;
   }
+
+  public get posture(): number {
+    return this._posture;
+  }
+
+  public set posture(val: number) {
+    this._posture = val;
+  }
 }
 
 export class SpriteLayer {
@@ -130,8 +154,8 @@ export class SpriteLayer {
     this.layer = [];
   }
 
-  public add(x: number, y: number, sprite: Sprite): SpriteUnit {
-    const unit = new SpriteUnit(x, y, sprite);
+  public add(x: number, y: number, sprite: Sprite, posture: number = 0): SpriteUnit {
+    const unit = new SpriteUnit(x, y, sprite, posture);
     this.layer.push(unit);
     return unit;
   }
