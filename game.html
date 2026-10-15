@@ -23,9 +23,28 @@
           </div>
         </div>
 
+        <!-- Contextual Proximity Item Prompt -->
+        <div id="proximity-prompt" class="proximity-prompt hidden">
+          <button id="btn-proximity-pickup" class="proximity-btn" title="Pick Up Item (P)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M7 11v-1a2 2 0 0 1 4 0v1"></path>
+              <path d="M11 11V7a2 2 0 0 1 4 0v4"></path>
+              <path d="M15 11V9a2 2 0 0 1 4 0v6a7 7 0 0 1-14 0v-4a2 2 0 0 1 4 0v1"></path>
+            </svg>
+            <span id="proximity-prompt-text">Pick up</span>
+          </button>
+        </div>
+
         <!-- Touch Action Buttons (Bottom Right) -->
         <div id="action-cluster">
           <div class="action-row auxiliary-actions">
+            <button id="btn-pickup" class="touch-btn sm-btn pickup-btn hidden" aria-label="Pick Up" title="Pick Up Item (P)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 11v-1a2 2 0 0 1 4 0v1"></path>
+                <path d="M11 11V7a2 2 0 0 1 4 0v4"></path>
+                <path d="M15 11V9a2 2 0 0 1 4 0v6a7 7 0 0 1-14 0v-4a2 2 0 0 1 4 0v1"></path>
+              </svg>
+            </button>
             <button id="btn-zoom-in" class="touch-btn sm-btn" aria-label="Zoom In" title="Zoom In">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
@@ -43,10 +62,48 @@
           </div>
         </div>
       </div>
+
+      <!-- Inventory Modal Overlay (Pastel Zen, Responsive) -->
+      <div id="inventory-modal" class="inventory-backdrop hidden" aria-hidden="true">
+        <div class="inventory-card">
+          <div class="inventory-header">
+            <div class="inventory-title">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 20h12a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2V5a3 3 0 0 0-6 0v2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2z"></path>
+                <path d="M10 5a2 2 0 0 1 4 0v2h-4V5z"></path>
+                <line x1="4" y1="13" x2="20" y2="13"></line>
+                <rect x="10" y="11" width="4" height="4" rx="1"></rect>
+              </svg>
+              <span>Inventory</span>
+              <span id="inventory-count" class="inventory-badge">0</span>
+            </div>
+            <button id="inventory-close-btn" class="modal-close-btn" aria-label="Close inventory">&times;</button>
+          </div>
+
+          <div class="inventory-body">
+            <div id="inventory-grid" class="inventory-grid"></div>
+            <div id="inventory-empty-state" class="inventory-empty hidden">No items in backpack</div>
+            <div id="inventory-detail-panel" class="inventory-detail hidden">
+              <div class="detail-info">
+                <span id="detail-item-name" class="detail-name"></span>
+                <span id="detail-item-desc" class="detail-desc"></span>
+              </div>
+              <button id="btn-drop-item" class="btn-drop" title="Drop on ground">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 3v13"></path>
+                  <path d="m7 11 5 5 5-5"></path>
+                  <path d="M5 21h14"></path>
+                </svg>
+                <span>Drop</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="controls-overlay">
       <a href="index.html" class="back-link">&larr; Back</a>
-      <span class="hints">WASD &middot; Space &middot; I</span>
+      <span class="hints">WASD &middot; Space &middot; P &middot; I</span>
       <button id="touch-mode-toggle" class="mode-toggle" title="Toggle touch controls">Touch: Auto</button>
     </div>
     <script type="module" src="/src/game/main.ts"></script>

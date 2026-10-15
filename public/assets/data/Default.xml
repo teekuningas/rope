@@ -478,6 +478,11 @@
         <position_y>116</position_y>
       </Item>
       <Item>
+        <spriteId>06</spriteId>
+        <position_x>2480</position_x>
+        <position_y>2300</position_y>
+      </Item>
+      <Item>
         <spriteId>02</spriteId>
         <position_x>4436</position_x>
         <position_y>1380</position_y>

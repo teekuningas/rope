@@ -30,6 +30,13 @@ class MapEditorApp {
   private spritePosture: number = 0;
   private snapToCenter: boolean = true;
 
+  private touchMode: 'paint' | 'erase' | 'pan' = 'paint';
+  private sidebarOpen: boolean = false;
+  private activeCanvasPointers: Map<number, { x: number; y: number }> = new Map();
+  private initialPinchDist: number | null = null;
+  private initialPinchZoom: number = 0.25;
+  private touchPanStart: { x: number; y: number; camX: number; camY: number } | null = null;
+
   private mouse = { x: 0, y: 0, isDown: false, button: 0 };
   private isMiddleDragging: boolean = false;
   private dragStart = { x: 0, y: 0 };
@@ -189,6 +196,23 @@ class MapEditorApp {
         }
       }
     }
+
+    // Update floating mobile touch bar active chip
+    const touchImg = document.getElementById('touch-active-img') as HTMLImageElement | null;
+    const touchRot = document.getElementById('touch-active-rot');
+    if (touchImg) {
+      if (this.activeMode === 'tile' && this.selectedTile?.texture) {
+        touchImg.src = this.selectedTile.texture.src;
+        touchImg.style.transform = `rotate(${this.tilePosture * 90}deg)`;
+      } else if (this.activeMode === 'sprite' && this.selectedSprite?.texture) {
+        touchImg.src = this.selectedSprite.texture.src;
+        touchImg.style.transform = this.selectedSprite.canRotate ? `rotate(${this.spritePosture * 90}deg)` : 'none';
+      }
+    }
+    if (touchRot) {
+      const rot = this.activeMode === 'tile' ? this.tilePosture * 90 : this.selectedSprite?.canRotate ? this.spritePosture * 90 : 0;
+      touchRot.textContent = `${rot}°`;
+    }
   }
 
   private populatePalettes(): void {
@@ -211,7 +235,13 @@ class MapEditorApp {
       label.textContent = tile.name || tile.id;
       item.appendChild(label);
 
-      item.addEventListener('click', () => this.selectTile(tile));
+      item.addEventListener('click', () => {
+        this.selectTile(tile);
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar && window.getComputedStyle(sidebar).position === 'absolute') {
+          this.toggleSidebar(false);
+        }
+      });
       tilesContainer.appendChild(item);
     }
 
@@ -232,7 +262,13 @@ class MapEditorApp {
       label.textContent = `ID ${sprite.id}`;
       item.appendChild(label);
 
-      item.addEventListener('click', () => this.selectSprite(sprite));
+      item.addEventListener('click', () => {
+        this.selectSprite(sprite);
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar && window.getComputedStyle(sidebar).position === 'absolute') {
+          this.toggleSidebar(false);
+        }
+      });
       spritesContainer.appendChild(item);
     }
   }
@@ -388,50 +424,155 @@ class MapEditorApp {
     });
   }
 
+  public toggleSidebar(open?: boolean): void {
+    this.sidebarOpen = open !== undefined ? open : !this.sidebarOpen;
+    const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.toggle('open', this.sidebarOpen);
+    if (backdrop) backdrop.classList.toggle('open', this.sidebarOpen);
+    setTimeout(() => this.resizeCanvas(), 260);
+  }
+
+  public setTouchMode(mode: 'paint' | 'erase' | 'pan'): void {
+    this.touchMode = mode;
+    document.getElementById('btn-mode-paint')?.classList.toggle('active', mode === 'paint');
+    document.getElementById('btn-mode-erase')?.classList.toggle('active', mode === 'erase');
+    document.getElementById('btn-mode-pan')?.classList.toggle('active', mode === 'pan');
+
+    if (mode === 'pan') {
+      this.canvas.style.cursor = 'grab';
+    } else if (mode === 'erase') {
+      this.canvas.style.cursor = 'not-allowed';
+    } else {
+      this.canvas.style.cursor = 'crosshair';
+    }
+  }
+
   private bindMouse(): void {
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    this.canvas.addEventListener('mousedown', (e) => {
+    this.canvas.addEventListener('pointerdown', (e) => {
       this.useKeyboardCursor = false;
-      this.mouse.isDown = true;
-      this.mouse.button = e.button;
+      try {
+        this.canvas.setPointerCapture(e.pointerId);
+      } catch {}
+      this.activeCanvasPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-      if (e.button === 1) {
-        // Middle button pan
-        this.isMiddleDragging = true;
-        this.dragStart = { x: e.clientX, y: e.clientY };
-      } else if (e.button === 0) {
-        // Left click: place tile or sprite
-        this.applyToolAtMouse(e);
-      } else if (e.button === 2) {
-        // Right click: delete sprite under cursor
-        this.deleteSpriteAtMouse();
-      }
-    });
-
-    window.addEventListener('mouseup', () => {
-      this.mouse.isDown = false;
-      this.isMiddleDragging = false;
-    });
-
-    this.canvas.addEventListener('mousemove', (e) => {
-      this.useKeyboardCursor = false;
       const rect = this.canvas.getBoundingClientRect();
       this.mouse.x = e.clientX - rect.left;
       this.mouse.y = e.clientY - rect.top;
 
-      if (this.isMiddleDragging) {
-        const dx = e.clientX - this.dragStart.x;
-        const dy = e.clientY - this.dragStart.y;
-        this.camera.pan(-dx, -dy);
-        this.dragStart = { x: e.clientX, y: e.clientY };
-      } else if (this.mouse.isDown && this.mouse.button === 0 && this.activeMode === 'tile') {
-        // Paint drag for tiles
-        this.applyToolAtMouse(e);
+      if (e.pointerType === 'touch') {
+        if (this.activeCanvasPointers.size === 1) {
+          if (this.touchMode === 'pan') {
+            this.touchPanStart = { x: e.clientX, y: e.clientY, camX: this.camera.x, camY: this.camera.y };
+          } else if (this.touchMode === 'paint') {
+            this.mouse.isDown = true;
+            this.mouse.button = 0;
+            this.applyToolAtMouse();
+          } else if (this.touchMode === 'erase') {
+            this.deleteSpriteAtMouse();
+          }
+        } else if (this.activeCanvasPointers.size === 2) {
+          const [p1, p2] = Array.from(this.activeCanvasPointers.values());
+          this.initialPinchDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+          this.initialPinchZoom = this.camera.zoom;
+          this.touchPanStart = {
+            x: (p1.x + p2.x) / 2,
+            y: (p1.y + p2.y) / 2,
+            camX: this.camera.x,
+            camY: this.camera.y,
+          };
+        }
+      } else {
+        // Mouse pointer
+        this.mouse.isDown = true;
+        this.mouse.button = e.button;
+
+        if (e.button === 1 || this.touchMode === 'pan') {
+          this.isMiddleDragging = true;
+          this.dragStart = { x: e.clientX, y: e.clientY };
+        } else if (e.button === 0) {
+          if (this.touchMode === 'erase') {
+            this.deleteSpriteAtMouse();
+          } else {
+            this.applyToolAtMouse(e);
+          }
+        } else if (e.button === 2) {
+          this.deleteSpriteAtMouse();
+        }
       }
 
       this.updateCoordsStatus();
     });
+
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (this.activeCanvasPointers.has(e.pointerId)) {
+        this.activeCanvasPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
+      const rect = this.canvas.getBoundingClientRect();
+      this.mouse.x = e.clientX - rect.left;
+      this.mouse.y = e.clientY - rect.top;
+
+      if (e.pointerType === 'touch') {
+        if (this.activeCanvasPointers.size === 2 && this.initialPinchDist !== null && this.touchPanStart) {
+          const [p1, p2] = Array.from(this.activeCanvasPointers.values());
+          const currentDist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+          const ratio = currentDist / this.initialPinchDist;
+          this.camera.zoom = Math.min(1.5, Math.max(0.08, Math.round(this.initialPinchZoom * ratio * 40) / 40));
+
+          const curMidX = (p1.x + p2.x) / 2;
+          const curMidY = (p1.y + p2.y) / 2;
+          const dx = curMidX - this.touchPanStart.x;
+          const dy = curMidY - this.touchPanStart.y;
+          this.camera.x = this.touchPanStart.camX - dx / this.camera.zoom;
+          this.camera.y = this.touchPanStart.camY - dy / this.camera.zoom;
+          return;
+        }
+
+        if (this.activeCanvasPointers.size === 1) {
+          if (this.touchMode === 'pan' && this.touchPanStart) {
+            const dx = e.clientX - this.touchPanStart.x;
+            const dy = e.clientY - this.touchPanStart.y;
+            this.camera.x = this.touchPanStart.camX - dx / this.camera.zoom;
+            this.camera.y = this.touchPanStart.camY - dy / this.camera.zoom;
+          } else if (this.touchMode === 'paint' && this.activeMode === 'tile' && this.mouse.isDown) {
+            this.applyToolAtMouse();
+          }
+        }
+      } else {
+        // Mouse move
+        if (this.isMiddleDragging) {
+          const dx = e.clientX - this.dragStart.x;
+          const dy = e.clientY - this.dragStart.y;
+          this.camera.pan(-dx, -dy);
+          this.dragStart = { x: e.clientX, y: e.clientY };
+        } else if (this.mouse.isDown && this.mouse.button === 0 && this.activeMode === 'tile' && this.touchMode === 'paint') {
+          this.applyToolAtMouse(e);
+        }
+      }
+
+      this.updateCoordsStatus();
+    });
+
+    const onPointerEnd = (e: PointerEvent) => {
+      this.mouse.isDown = false;
+      this.isMiddleDragging = false;
+      try {
+        this.canvas.releasePointerCapture(e.pointerId);
+      } catch {}
+      this.activeCanvasPointers.delete(e.pointerId);
+      if (this.activeCanvasPointers.size < 2) {
+        this.initialPinchDist = null;
+      }
+      if (this.activeCanvasPointers.size === 0) {
+        this.touchPanStart = null;
+      }
+    };
+
+    this.canvas.addEventListener('pointerup', onPointerEnd);
+    this.canvas.addEventListener('pointercancel', onPointerEnd);
 
     // Smooth mouse wheel / trackpad zoom
     this.canvas.addEventListener(
@@ -570,6 +711,31 @@ class MapEditorApp {
     if (btnSnap) {
       btnSnap.addEventListener('click', () => this.toggleSnap());
     }
+
+    // Mobile drawer toggle & backdrop
+    const btnTogglePalette = document.getElementById('btn-toggle-palette');
+    const btnCloseSidebar = document.getElementById('btn-close-sidebar');
+    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+    if (btnTogglePalette) btnTogglePalette.addEventListener('click', () => this.toggleSidebar());
+    if (btnCloseSidebar) btnCloseSidebar.addEventListener('click', () => this.toggleSidebar(false));
+    if (sidebarBackdrop) sidebarBackdrop.addEventListener('click', () => this.toggleSidebar(false));
+
+    // Floating touch bar actions
+    const btnTouchPalette = document.getElementById('btn-touch-palette');
+    const btnTouchRotate = document.getElementById('btn-touch-rotate');
+    const btnModePaint = document.getElementById('btn-mode-paint');
+    const btnModeErase = document.getElementById('btn-mode-erase');
+    const btnModePan = document.getElementById('btn-mode-pan');
+    const btnTouchZoomIn = document.getElementById('btn-touch-zoom-in');
+    const btnTouchZoomOut = document.getElementById('btn-touch-zoom-out');
+
+    if (btnTouchPalette) btnTouchPalette.addEventListener('click', () => this.toggleSidebar());
+    if (btnTouchRotate) btnTouchRotate.addEventListener('click', () => this.rotateSelection());
+    if (btnModePaint) btnModePaint.addEventListener('click', () => this.setTouchMode('paint'));
+    if (btnModeErase) btnModeErase.addEventListener('click', () => this.setTouchMode('erase'));
+    if (btnModePan) btnModePan.addEventListener('click', () => this.setTouchMode('pan'));
+    if (btnTouchZoomIn) btnTouchZoomIn.addEventListener('click', () => this.camera.zoomBy(0.05));
+    if (btnTouchZoomOut) btnTouchZoomOut.addEventListener('click', () => this.camera.zoomBy(-0.05));
 
     document.getElementById('btn-rotate')!.addEventListener('click', () => this.rotateSelection());
     document.getElementById('btn-save-map')!.addEventListener('click', () => this.saveMap());

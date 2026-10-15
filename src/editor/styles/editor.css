@@ -268,3 +268,137 @@ dialog h2 {
   gap: 10px;
   margin-top: 24px;
 }
+
+/* Palette Drawer Controls */
+.btn-palette-toggle {
+  display: none;
+}
+
+.btn-sidebar-close {
+  display: none;
+  background: transparent;
+  border: none;
+  color: #8da4b8;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 6px 12px;
+  margin-left: auto;
+  transition: color 0.15s ease;
+}
+
+.btn-sidebar-close:hover,
+.btn-sidebar-close:active {
+  color: #fff;
+}
+
+@media (max-width: 900px), (max-height: 600px) {
+  .btn-palette-toggle {
+    display: inline-flex;
+    align-items: center;
+    background: #3e5246;
+    border-color: #526c5d;
+    color: #e4ebe6;
+  }
+
+  .btn-sidebar-close {
+    display: block;
+  }
+}
+
+/* ========================================================= */
+/* Floating Touch Toolbar for Mobile / Laptop quick actions  */
+/* ========================================================= */
+.editor-touch-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(21, 25, 30, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(141, 164, 184, 0.28);
+  border-radius: 28px;
+  padding: 5px 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+  z-index: 40;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  max-width: 95vw;
+  box-sizing: border-box;
+}
+
+.touch-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.touch-bar-group.mode-group {
+  background: rgba(14, 18, 23, 0.65);
+  border-radius: 22px;
+  padding: 2px;
+  border: 1px solid rgba(141, 164, 184, 0.15);
+}
+
+.touch-bar-btn {
+  background: rgba(37, 45, 55, 0.6);
+  border: 1px solid rgba(141, 164, 184, 0.22);
+  color: #cbd5e1;
+  border-radius: 20px;
+  padding: 6px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.touch-bar-btn:hover {
+  background: #313b48;
+  color: #fff;
+  border-color: rgba(141, 164, 184, 0.45);
+}
+
+.touch-bar-btn.active {
+  background: #3e5246;
+  border-color: #526c5d;
+  color: #e4ebe6;
+  box-shadow: 0 0 10px rgba(82, 108, 93, 0.4);
+}
+
+.touch-bar-btn.preview-chip {
+  padding: 3px 8px;
+  border-radius: 16px;
+  gap: 6px;
+  background: rgba(28, 34, 43, 0.85);
+}
+
+.touch-bar-btn.preview-chip img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  transform-origin: center;
+}
+
+.touch-bar-btn .rot-badge {
+  font-size: 0.7rem;
+  color: #8da4b8;
+}
+
+.touch-bar-btn.sm {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+}

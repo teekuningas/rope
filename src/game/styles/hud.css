@@ -57,10 +57,10 @@ a.back-link:hover {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  padding: 20px;
-  padding-left: max(20px, env(safe-area-inset-left));
-  padding-right: max(20px, env(safe-area-inset-right));
-  padding-bottom: max(20px, env(safe-area-inset-bottom));
+  padding: 28px;
+  padding-left: max(32px, calc(env(safe-area-inset-left) + 20px));
+  padding-right: max(32px, calc(env(safe-area-inset-right) + 20px));
+  padding-bottom: max(36px, calc(env(safe-area-inset-bottom) + 24px));
   box-sizing: border-box;
 }
 
@@ -72,8 +72,8 @@ a.back-link:hover {
 #joystick-zone {
   pointer-events: auto;
   position: relative;
-  width: 120px;
-  height: 120px;
+  width: 140px;
+  height: 140px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -81,6 +81,8 @@ a.back-link:hover {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+  margin-left: 4px;
+  margin-bottom: 4px;
 }
 
 #joystick-base {
@@ -132,6 +134,8 @@ a.back-link:hover {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+  margin-right: 4px;
+  margin-bottom: 4px;
 }
 
 .action-row {
@@ -232,4 +236,289 @@ a.back-link:hover {
   #controls-overlay .hints {
     display: none;
   }
+}
+
+/* Portrait specific thumb & action button clearance */
+@media (orientation: portrait) and ((pointer: coarse) or (max-width: 1024px)) {
+  #touch-controls {
+    padding-bottom: max(52px, calc(env(safe-area-inset-bottom) + 38px));
+    padding-left: max(32px, calc(env(safe-area-inset-left) + 20px));
+    padding-right: max(32px, calc(env(safe-area-inset-right) + 20px));
+  }
+}
+
+/* Proximity Prompt (Floating Pill) */
+.proximity-prompt {
+  position: absolute;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 55;
+  pointer-events: auto;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.proximity-prompt.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(-10px);
+}
+
+.proximity-btn {
+  background: rgba(28, 34, 43, 0.9);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(141, 164, 184, 0.35);
+  border-radius: 20px;
+  color: #dbe2e6;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: all 0.15s ease;
+}
+
+.proximity-btn:hover,
+.proximity-btn:active {
+  background: rgba(46, 61, 52, 0.95);
+  border-color: rgba(99, 133, 114, 0.7);
+  color: #fff;
+  transform: scale(1.03);
+}
+
+/* Pickup Button in Touch Cluster */
+.touch-btn.pickup-btn {
+  background: rgba(46, 61, 52, 0.85);
+  border-color: rgba(99, 133, 114, 0.5);
+  color: #e4ebe6;
+  transition: all 0.2s ease;
+}
+
+.touch-btn.pickup-btn.hidden {
+  display: none !important;
+}
+
+.touch-btn.pickup-btn.has-nearby {
+  background: rgba(62, 82, 70, 0.95);
+  border-color: #638572;
+  box-shadow: 0 0 16px rgba(99, 133, 114, 0.5);
+  animation: pulse-pickup 1.8s infinite ease-in-out;
+}
+
+@keyframes pulse-pickup {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+/* ========================================================= */
+/* Responsive DOM Inventory Modal                            */
+/* ========================================================= */
+.inventory-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  opacity: 1;
+  transition: opacity 0.18s ease;
+  pointer-events: auto;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.inventory-backdrop.hidden {
+  opacity: 0;
+  pointer-events: none;
+  display: none;
+}
+
+.inventory-card {
+  background: #171b20;
+  border: 1px solid rgba(141, 164, 184, 0.28);
+  border-radius: 16px;
+  width: min(440px, 94vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+}
+
+.inventory-header {
+  height: 52px;
+  background: #1c222b;
+  border-bottom: 1px solid rgba(141, 164, 184, 0.18);
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inventory-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #e4ebe6;
+  letter-spacing: 0.03em;
+}
+
+.inventory-badge {
+  font-size: 0.75rem;
+  background: #252d37;
+  color: #8da4b8;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(141, 164, 184, 0.2);
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: #8da4b8;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.modal-close-btn:hover,
+.modal-close-btn:active {
+  color: #fff;
+  background: rgba(141, 164, 184, 0.15);
+}
+
+.inventory-body {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+
+.inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  justify-items: center;
+}
+
+.inventory-slot {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  max-width: 72px;
+  min-height: 60px;
+  background: #1c222b;
+  border: 1px solid rgba(141, 164, 184, 0.2);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.inventory-slot:hover {
+  border-color: rgba(141, 164, 184, 0.45);
+  background: #232b36;
+}
+
+.inventory-slot.selected {
+  border-color: #638572;
+  background: #202b25;
+  box-shadow: 0 0 12px rgba(99, 133, 114, 0.4);
+}
+
+.inventory-slot img {
+  width: 75%;
+  height: 75%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  pointer-events: none;
+}
+
+.inventory-empty {
+  text-align: center;
+  color: #7b8893;
+  font-size: 0.9rem;
+  padding: 24px 0;
+}
+
+.inventory-empty.hidden {
+  display: none;
+}
+
+.inventory-detail {
+  background: #1c222b;
+  border: 1px solid rgba(141, 164, 184, 0.2);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inventory-detail.hidden {
+  display: none;
+}
+
+.detail-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.detail-name {
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: #e4ebe6;
+}
+
+.detail-desc {
+  font-size: 0.78rem;
+  color: #8da4b8;
+}
+
+.btn-drop {
+  background: rgba(90, 40, 40, 0.35);
+  border: 1px solid rgba(220, 100, 100, 0.4);
+  color: #fca5a5;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-drop:hover,
+.btn-drop:active {
+  background: rgba(140, 45, 45, 0.55);
+  border-color: rgba(240, 120, 120, 0.7);
+  color: #fff;
+  transform: scale(0.98);
 }

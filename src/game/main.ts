@@ -26,6 +26,7 @@ interface WorldEntity {
   isItem?: boolean;
   posture?: number;
   name?: string;
+  dropCooldownUntil?: number;
 }
 
 interface LightningStrike {
@@ -73,6 +74,7 @@ class GameApp {
   private keysDown: Set<string> = new Set();
   private mouse = { x: -1000, y: -1000 };
   private showInventory: boolean = false;
+  private selectedInventoryIndex: number | null = null;
 
   private touchMovement = { x: 0, y: 0 };
   private joystickPointerId: number | null = null;
@@ -93,6 +95,7 @@ class GameApp {
     this.ctx = this.canvas.getContext('2d')!;
 
     this.initTouchControls();
+    this.initInventoryModal();
     this.bindEvents();
   }
 
@@ -164,7 +167,7 @@ class GameApp {
         texture: spriteObj.texture ?? undefined,
         isItem: spriteObj.isItem,
         posture: s.posture ?? 0,
-        name: `Item ${spriteObj.id}`,
+        name: spriteObj.id === '06' ? 'Sword' : spriteObj.id === '01' ? 'Magic Relic' : `Item ${spriteObj.id}`,
       });
     }
 
@@ -319,10 +322,8 @@ class GameApp {
     };
 
     bindButton('btn-lightning', () => this.strikeLightningInFront());
-    bindButton('btn-inventory', () => {
-      this.showInventory = !this.showInventory;
-      this.updateInventoryBtnUI();
-    });
+    bindButton('btn-inventory', () => this.toggleInventory());
+    bindButton('btn-pickup', () => this.pickupNearbyItem());
     bindButton('btn-zoom-in', () => { this.camera.zoom = Math.min(1.0, this.camera.zoom + 0.25); });
     bindButton('btn-zoom-out', () => { this.camera.zoom = Math.max(0.25, this.camera.zoom - 0.25); });
 
@@ -380,22 +381,30 @@ class GameApp {
     const rect = base.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    const maxRadius = rect.width / 2;
+    const maxVisualRadius = 45;
+    const fullSpeedRadius = 38;
 
     const rawDx = e.clientX - centerX;
     const rawDy = e.clientY - centerY;
     const dist = Math.hypot(rawDx, rawDy);
 
-    let clampedX = rawDx;
-    let clampedY = rawDy;
-    if (dist > maxRadius) {
-      clampedX = (rawDx / dist) * maxRadius;
-      clampedY = (rawDy / dist) * maxRadius;
+    let visualX = rawDx;
+    let visualY = rawDy;
+    if (dist > maxVisualRadius) {
+      visualX = (rawDx / dist) * maxVisualRadius;
+      visualY = (rawDy / dist) * maxVisualRadius;
     }
 
-    thumb.style.transform = `translate(${clampedX}px, ${clampedY}px)`;
-    this.touchMovement.x = clampedX / maxRadius;
-    this.touchMovement.y = clampedY / maxRadius;
+    thumb.style.transform = `translate(${visualX}px, ${visualY}px)`;
+
+    if (dist > 3) {
+      const speedFactor = Math.min(1.0, dist / fullSpeedRadius);
+      this.touchMovement.x = (rawDx / dist) * speedFactor;
+      this.touchMovement.y = (rawDy / dist) * speedFactor;
+    } else {
+      this.touchMovement.x = 0;
+      this.touchMovement.y = 0;
+    }
   }
 
   private resetJoystick(zone: HTMLElement, thumb: HTMLElement): void {
@@ -416,8 +425,15 @@ class GameApp {
       }
 
       if (e.code === 'KeyI') {
-        this.showInventory = !this.showInventory;
-        this.updateInventoryBtnUI();
+        this.toggleInventory();
+      }
+
+      if (e.code === 'Escape' && this.showInventory) {
+        this.toggleInventory(false);
+      }
+
+      if (e.code === 'KeyD' && this.showInventory) {
+        this.dropSelectedItem();
       }
 
       if (e.code === 'PageUp' || e.code === 'Equal') {
@@ -449,31 +465,10 @@ class GameApp {
       this.mouse.y = -1000;
     });
 
-    // Pointer events on canvas: supports touch-drag panning, pinch zoom, and tap lightning
+    // Pointer events on canvas: supports touch-drag panning, pinch zoom, item pickup tap, and tap lightning
     this.canvas.addEventListener('pointerdown', (e) => {
       if (e.target !== this.canvas) return;
       this.startAudio();
-
-      const rect = this.canvas.getBoundingClientRect();
-      const clickX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
-      const clickY = (e.clientY - rect.top) * (this.canvas.height / rect.height);
-
-      // Tap on or outside inventory modal to close
-      if (this.showInventory) {
-        const invW = 380;
-        const invH = 240;
-        const invX = (this.canvas.width - invW) / 2;
-        const invY = (this.canvas.height - invH) / 2;
-
-        const isInside = clickX >= invX && clickX <= invX + invW && clickY >= invY && clickY <= invY + invH;
-        const isCloseBtn = clickX >= invX + invW - 40 && clickX <= invX + invW && clickY >= invY && clickY <= invY + 45;
-
-        if (!isInside || isCloseBtn) {
-          this.showInventory = false;
-          this.updateInventoryBtnUI();
-          return;
-        }
-      }
 
       this.activeCanvasPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
@@ -529,7 +524,6 @@ class GameApp {
     const onCanvasPointerEnd = (e: PointerEvent) => {
       this.updateCanvasCursor(false);
       if (this.activeCanvasPointers.size === 1 && !this.canvasHasDragged && !this.showInventory) {
-        // Clean tap/click: strike lightning at world coordinate
         const rect = this.canvas.getBoundingClientRect();
         const scaleX = this.canvas.width / rect.width;
         const scaleY = this.canvas.height / rect.height;
@@ -541,6 +535,23 @@ class GameApp {
         const worldX = this.camera.x + centeredX / this.camera.zoom;
         const worldY = this.camera.y + centeredY / this.camera.zoom;
 
+        // Check if user tapped an item near the player
+        const clickedItemIndex = this.findNearbyItemAtWorldPos(worldX, worldY);
+        if (clickedItemIndex !== -1) {
+          const item = this.worldEntities[clickedItemIndex];
+          const itemCenterX = item.x + item.width / 2;
+          const itemCenterY = item.y + item.height / 2;
+          const distToPlayer = Math.hypot(this.player.x - itemCenterX, this.player.y - itemCenterY);
+          if (distToPlayer <= 220) {
+            this.pickupItemByIndex(clickedItemIndex);
+            this.activeCanvasPointers.delete(e.pointerId);
+            this.canvasDragStart = null;
+            this.canvasHasDragged = false;
+            return;
+          }
+        }
+
+        // Clean tap/click: strike lightning at world coordinate
         this.strikeLightning(worldX, worldY);
       }
 
@@ -641,18 +652,255 @@ class GameApp {
     }
   }
 
-  private pickupNearbyItem(): void {
-    const pickupRadius = 150;
+  public getItemName(ent: WorldEntity): string {
+    const id = ent.sprite?.id;
+    if (id === '06') return 'Sword';
+    if (id === '01') return 'Magic Relic';
+    if (id === '08') return 'Forest Mushroom';
+    if (id === '09') return 'Spotted Mushroom';
+    if (id === '07') return 'Soccer Ball';
+    return ent.name || `Item ${id ?? ''}`.trim();
+  }
+
+  public getItemDesc(ent: WorldEntity): string {
+    const id = ent.sprite?.id;
+    if (id === '06') return 'A sharp, finely crafted steel sword with a golden hilt.';
+    if (id === '01') return 'An ancient enchanted spiraling relic.';
+    if (id === '08') return 'A wild forest mushroom plucked from the glade.';
+    if (id === '09') return 'A curious mushroom with brightly colored spots.';
+    if (id === '07') return 'A bouncy soccer ball ready for a kick.';
+    return 'A carried adventurer item.';
+  }
+
+  private initInventoryModal(): void {
+    const modal = document.getElementById('inventory-modal');
+    const closeBtn = document.getElementById('inventory-close-btn');
+    const dropBtn = document.getElementById('btn-drop-item');
+    const proxPickupBtn = document.getElementById('btn-proximity-pickup');
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => this.toggleInventory(false));
+    }
+    if (modal) {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) this.toggleInventory(false);
+      });
+    }
+    if (dropBtn) {
+      dropBtn.addEventListener('click', () => this.dropSelectedItem());
+    }
+    if (proxPickupBtn) {
+      proxPickupBtn.addEventListener('click', () => this.pickupNearbyItem());
+    }
+  }
+
+  public toggleInventory(open?: boolean): void {
+    this.showInventory = open !== undefined ? open : !this.showInventory;
+    const modal = document.getElementById('inventory-modal');
+    if (modal) {
+      modal.classList.toggle('hidden', !this.showInventory);
+      modal.setAttribute('aria-hidden', String(!this.showInventory));
+    }
+    this.updateInventoryBtnUI();
+    if (this.showInventory) {
+      this.selectedInventoryIndex = null;
+      this.updateInventoryModalUI();
+    }
+  }
+
+  public updateInventoryModalUI(): void {
+    const countBadge = document.getElementById('inventory-count');
+    if (countBadge) countBadge.textContent = String(this.player.inventory.length);
+
+    const grid = document.getElementById('inventory-grid');
+    const emptyState = document.getElementById('inventory-empty-state');
+    const detailPanel = document.getElementById('inventory-detail-panel');
+    if (!grid) return;
+
+    grid.innerHTML = '';
+    const totalSlots = Math.max(8, Math.ceil(this.player.inventory.length / 4) * 4);
+
+    if (this.player.inventory.length === 0) {
+      if (emptyState) emptyState.classList.remove('hidden');
+      if (detailPanel) detailPanel.classList.add('hidden');
+    } else {
+      if (emptyState) emptyState.classList.add('hidden');
+    }
+
+    for (let i = 0; i < totalSlots; i++) {
+      const slot = document.createElement('div');
+      slot.className = 'inventory-slot';
+      if (i < this.player.inventory.length) {
+        const item = this.player.inventory[i];
+        if (i === this.selectedInventoryIndex) {
+          slot.classList.add('selected');
+        }
+        const tex = item.sprite?.texture ?? item.texture;
+        if (tex) {
+          const img = document.createElement('img');
+          img.src = tex.src;
+          img.alt = this.getItemName(item);
+          slot.appendChild(img);
+        }
+        slot.title = this.getItemName(item);
+        slot.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.selectInventoryItem(i);
+        });
+      }
+      grid.appendChild(slot);
+    }
+
+    this.renderDetailPanel();
+  }
+
+  private selectInventoryItem(index: number): void {
+    this.selectedInventoryIndex = this.selectedInventoryIndex === index ? null : index;
+    const slots = document.querySelectorAll('.inventory-slot');
+    slots.forEach((s, idx) => {
+      s.classList.toggle('selected', idx === this.selectedInventoryIndex);
+    });
+    this.renderDetailPanel();
+  }
+
+  private renderDetailPanel(): void {
+    const detailPanel = document.getElementById('inventory-detail-panel');
+    const nameEl = document.getElementById('detail-item-name');
+    const descEl = document.getElementById('detail-item-desc');
+    if (!detailPanel || !nameEl || !descEl) return;
+
+    if (this.selectedInventoryIndex !== null && this.selectedInventoryIndex < this.player.inventory.length) {
+      const item = this.player.inventory[this.selectedInventoryIndex];
+      nameEl.textContent = this.getItemName(item);
+      descEl.textContent = this.getItemDesc(item);
+      detailPanel.classList.remove('hidden');
+    } else {
+      detailPanel.classList.add('hidden');
+    }
+  }
+
+  public dropSelectedItem(): void {
+    if (this.selectedInventoryIndex === null) return;
+    if (this.selectedInventoryIndex < 0 || this.selectedInventoryIndex >= this.player.inventory.length) {
+      this.selectedInventoryIndex = null;
+      return;
+    }
+
+    const item = this.player.inventory.splice(this.selectedInventoryIndex, 1)[0];
+    this.selectedInventoryIndex = null;
+
+    const offsetDist = 70;
+    let dropX = this.player.x;
+    let dropY = this.player.y;
+    if (this.player.facing === 'up') dropY -= offsetDist;
+    else if (this.player.facing === 'down') dropY += offsetDist;
+    else if (this.player.facing === 'left') dropX -= offsetDist;
+    else if (this.player.facing === 'right') dropX += offsetDist;
+
+    if (this.mapLayer) {
+      const cell = Engine.vectorToCell(dropX, dropY);
+      if (cell.x < 0 || cell.x >= this.mapLayer.width || cell.y < 0 || cell.y >= this.mapLayer.height) {
+        dropX = this.player.x;
+        dropY = this.player.y;
+      }
+    }
+
+    item.x = dropX - item.width / 2;
+    item.y = dropY - item.height / 2;
+    item.dropCooldownUntil = Date.now() + 1500;
+
+    this.worldEntities.push(item);
+    console.log(`Dropped item: ${this.getItemName(item)} at (${Math.round(dropX)}, ${Math.round(dropY)})`);
+
+    this.updateInventoryModalUI();
+    this.updateProximityPrompt();
+  }
+
+  public pickupItemByIndex(index: number): void {
+    if (index < 0 || index >= this.worldEntities.length) return;
+    const ent = this.worldEntities[index];
+    if (!ent.isItem) return;
+    this.player.inventory.push(ent);
+    this.worldEntities.splice(index, 1);
+    console.log(`Picked up: ${this.getItemName(ent)}`);
+    this.updateInventoryModalUI();
+    this.updateProximityPrompt();
+  }
+
+  public pickupNearbyItem(): void {
+    const pickupRadius = 160;
+    let closestIndex = -1;
+    let closestDist = Infinity;
+
+    for (let i = 0; i < this.worldEntities.length; i++) {
+      const ent = this.worldEntities[i];
+      if (!ent.isItem) continue;
+      if (ent.dropCooldownUntil && Date.now() < ent.dropCooldownUntil) continue;
+
+      const itemCenterX = ent.x + ent.width / 2;
+      const itemCenterY = ent.y + ent.height / 2;
+      const dist = Math.hypot(this.player.x - itemCenterX, this.player.y - itemCenterY);
+      if (dist < pickupRadius && dist < closestDist) {
+        closestDist = dist;
+        closestIndex = i;
+      }
+    }
+
+    if (closestIndex !== -1) {
+      this.pickupItemByIndex(closestIndex);
+    }
+  }
+
+  public findNearbyItemAtWorldPos(worldX: number, worldY: number): number {
     for (let i = this.worldEntities.length - 1; i >= 0; i--) {
       const ent = this.worldEntities[i];
       if (!ent.isItem) continue;
+      const itemCenterX = ent.x + ent.width / 2;
+      const itemCenterY = ent.y + ent.height / 2;
+      const dist = Math.hypot(worldX - itemCenterX, worldY - itemCenterY);
+      if (dist < 90) {
+        return i;
+      }
+    }
+    return -1;
+  }
 
-      const dist = Math.hypot(this.player.x - ent.x, this.player.y - ent.y);
-      if (dist < pickupRadius) {
-        this.player.inventory.push(ent);
-        this.worldEntities.splice(i, 1);
-        console.log(`Picked up: ${ent.name}`);
-        break;
+  public updateProximityPrompt(): void {
+    const pickupRadius = 160;
+    let closestItem: WorldEntity | null = null;
+    let closestDist = Infinity;
+
+    for (const ent of this.worldEntities) {
+      if (!ent.isItem) continue;
+      if (ent.dropCooldownUntil && Date.now() < ent.dropCooldownUntil) continue;
+
+      const itemCenterX = ent.x + ent.width / 2;
+      const itemCenterY = ent.y + ent.height / 2;
+      const dist = Math.hypot(this.player.x - itemCenterX, this.player.y - itemCenterY);
+      if (dist < pickupRadius && dist < closestDist) {
+        closestDist = dist;
+        closestItem = ent;
+      }
+    }
+
+    const promptEl = document.getElementById('proximity-prompt');
+    const promptTextEl = document.getElementById('proximity-prompt-text');
+    const touchPickupBtn = document.getElementById('btn-pickup');
+
+    if (closestItem) {
+      const itemName = this.getItemName(closestItem);
+      if (promptTextEl) promptTextEl.textContent = `Pick up ${itemName} (P)`;
+      if (promptEl) promptEl.classList.remove('hidden');
+      if (touchPickupBtn) {
+        touchPickupBtn.classList.remove('hidden');
+        touchPickupBtn.classList.add('has-nearby');
+        touchPickupBtn.title = `Pick up ${itemName}`;
+      }
+    } else {
+      if (promptEl) promptEl.classList.add('hidden');
+      if (touchPickupBtn) {
+        touchPickupBtn.classList.remove('has-nearby');
+        touchPickupBtn.classList.add('hidden');
       }
     }
   }
@@ -807,14 +1055,18 @@ class GameApp {
       for (let i = this.worldEntities.length - 1; i >= 0; i--) {
         const ent = this.worldEntities[i];
         if (!ent.isItem) continue;
-        const dist = Math.hypot(this.player.x - ent.x, this.player.y - ent.y);
-        if (dist < 90) {
-          this.player.inventory.push(ent);
-          this.worldEntities.splice(i, 1);
+        if (ent.dropCooldownUntil && Date.now() < ent.dropCooldownUntil) continue;
+        const itemCenterX = ent.x + ent.width / 2;
+        const itemCenterY = ent.y + ent.height / 2;
+        const dist = Math.hypot(this.player.x - itemCenterX, this.player.y - itemCenterY);
+        if (dist < 80) {
+          this.pickupItemByIndex(i);
           break;
         }
       }
     }
+
+    this.updateProximityPrompt();
 
     // Map boundary clamping
     if (this.mapLayer) {
@@ -1058,81 +1310,7 @@ class GameApp {
   }
 
   private renderUI(): void {
-    if (this.showInventory) {
-      const invW = 380;
-      const invH = 240;
-      const invX = (this.canvas.width - invW) / 2;
-      const invY = (this.canvas.height - invH) / 2;
-
-      // Subtle backdrop shadow
-      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-      // Modal surface (Pastel zen slate)
-      this.ctx.fillStyle = 'rgba(21, 25, 30, 0.95)';
-      this.ctx.strokeStyle = 'rgba(141, 164, 184, 0.25)';
-      this.ctx.lineWidth = 1.5;
-
-      this.ctx.beginPath();
-      if (typeof this.ctx.roundRect === 'function') {
-        this.ctx.roundRect(invX, invY, invW, invH, 12);
-      } else {
-        this.ctx.rect(invX, invY, invW, invH);
-      }
-      this.ctx.fill();
-      this.ctx.stroke();
-
-      // Header title: Quiet, minimal "Inventory"
-      this.ctx.fillStyle = '#dbe2e6';
-      this.ctx.font = '500 16px -apple-system, BlinkMacSystemFont, "Inter", sans-serif';
-      this.ctx.fillText('Inventory', invX + 24, invY + 36);
-
-      // Close '×' icon at top right
-      this.ctx.fillStyle = '#8da4b8';
-      this.ctx.font = '300 20px sans-serif';
-      this.ctx.fillText('×', invX + invW - 32, invY + 34);
-
-      // Subtle divider line
-      this.ctx.strokeStyle = 'rgba(141, 164, 184, 0.12)';
-      this.ctx.beginPath();
-      this.ctx.moveTo(invX + 20, invY + 48);
-      this.ctx.lineTo(invX + invW - 20, invY + 48);
-      this.ctx.stroke();
-
-      if (this.player.inventory.length === 0) {
-        // Minimalist empty state
-        this.ctx.fillStyle = '#647380';
-        this.ctx.font = '14px -apple-system, BlinkMacSystemFont, "Inter", sans-serif';
-        this.ctx.fillText('Empty', invX + 24, invY + 84);
-      } else {
-        let slotX = invX + 24;
-        let slotY = invY + 64;
-        for (const item of this.player.inventory) {
-          this.ctx.fillStyle = 'rgba(28, 34, 43, 0.9)';
-          this.ctx.strokeStyle = 'rgba(141, 164, 184, 0.2)';
-          this.ctx.lineWidth = 1;
-
-          this.ctx.beginPath();
-          if (typeof this.ctx.roundRect === 'function') {
-            this.ctx.roundRect(slotX, slotY, 60, 60, 8);
-          } else {
-            this.ctx.rect(slotX, slotY, 60, 60);
-          }
-          this.ctx.fill();
-          this.ctx.stroke();
-
-          if (item.texture && item.texture.complete) {
-            this.ctx.drawImage(item.texture, slotX + 4, slotY + 4, 52, 52);
-          }
-
-          slotX += 70;
-          if (slotX + 60 > invX + invW - 20) {
-            slotX = invX + 24;
-            slotY += 70;
-          }
-        }
-      }
-    }
+    // In-game UI overlays (Inventory modal, prompts, buttons) are now managed via responsive DOM elements
   }
 }
 
