@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Editor</title>
+    <link rel="stylesheet" href="/src/editor/styles/layout.css" />
+    <link rel="stylesheet" href="/src/editor/styles/editor.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Editor</h1>
+        <span class="map-name" id="current-map-title">Maailma</span>
+      </div>
+      <div class="toolbar-buttons">
+        <button id="btn-new-map" class="btn-tool">New</button>
+        <button id="btn-open-map" class="btn-tool">Open</button>
+        <button id="btn-save-map" class="btn-tool primary">Save</button>
+        <a href="index.html" class="nav-link">&larr; Back</a>
+      </div>
+    </header>
+
+    <div id="workspace">
+      <div id="sidebar">
+        <div class="tabs">
+          <button id="tab-tiles" class="tab-btn active">Tiles</button>
+          <button id="tab-sprites" class="tab-btn">Sprites</button>
+        </div>
+        <div class="active-selection-bar">
+          <div class="preview-box">
+            <img id="active-preview-img" src="" alt="preview" />
+          </div>
+          <div class="preview-info">
+            <div id="active-item-name">Tile 02</div>
+            <div id="active-item-rotation">0&deg;</div>
+            <button id="btn-rotate" class="btn-tool">Rotate (R)</button>
+          </div>
+        </div>
+        <div id="palette-tiles" class="palette-container"></div>
+        <div id="palette-sprites" class="palette-container" style="display: none"></div>
+      </div>
+
+      <div id="canvas-container">
+        <canvas id="editor-canvas"></canvas>
+      </div>
+    </div>
+
+    <footer>
+      <div id="status-coords">0, 0</div>
+      <div class="controls-hint">
+        WASD pan &middot; Left paint &middot; Right erase &middot; Wheel zoom
+      </div>
+      <div id="status-map-size">10 &times; 10</div>
+    </footer>
+
+    <!-- Hidden file input for opening map XML -->
+    <input type="file" id="file-input-map" accept=".xml" style="display: none" />
+
+    <!-- New Map Dialog -->
+    <dialog id="dialog-new-map">
+      <h2>New Map</h2>
+      <form method="dialog" id="form-new-map">
+        <div class="form-group">
+          <label for="input-map-name">Name</label>
+          <input type="text" id="input-map-name" value="Map" required />
+        </div>
+        <div class="form-group">
+          <label for="input-map-width">Width</label>
+          <input type="number" id="input-map-width" value="10" min="1" max="100" required />
+        </div>
+        <div class="form-group">
+          <label for="input-map-height">Height</label>
+          <input type="number" id="input-map-height" value="10" min="1" max="100" required />
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="btn-cancel-new-map" class="btn-tool">Cancel</button>
+          <button type="submit" class="btn-tool primary">Create</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/editor/main.ts"></script>
+  </body>
+</html>

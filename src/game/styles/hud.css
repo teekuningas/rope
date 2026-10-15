@@ -1,0 +1,26 @@
+#controls-overlay {
+  margin-top: 14px;
+  font-size: 0.85rem;
+  color: #7b8893;
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  user-select: none;
+  letter-spacing: 0.05em;
+}
+
+.hints {
+  color: #647380;
+  font-size: 0.8rem;
+}
+
+a.back-link {
+  color: #8da4b8;
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: color 0.15s ease;
+}
+
+a.back-link:hover {
+  color: #b8cde0;
+}

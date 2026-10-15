@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rope</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+        background: #171b20;
+        color: #dbe2e6;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        letter-spacing: -0.01em;
+      }
+      .card {
+        background: #1f242c;
+        border: 1px solid #2d3540;
+        border-radius: 16px;
+        padding: 48px 40px;
+        width: 100%;
+        max-width: 420px;
+        text-align: center;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+      }
+      h1 {
+        font-size: 2.4rem;
+        font-weight: 300;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #e4ebe6;
+        margin-bottom: 32px;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .btn {
+        display: block;
+        padding: 14px 20px;
+        font-size: 1rem;
+        font-weight: 400;
+        letter-spacing: 0.04em;
+        text-decoration: none;
+        border-radius: 10px;
+        transition: all 0.2s ease;
+      }
+      .btn-play {
+        background: #3e5246;
+        color: #dce7e1;
+        border: 1px solid #526c5d;
+      }
+      .btn-play:hover {
+        background: #4a6354;
+        color: #ffffff;
+      }
+      .btn-editor {
+        background: #2a3441;
+        color: #cfdbe6;
+        border: 1px solid #3c4b5d;
+      }
+      .btn-editor:hover {
+        background: #354252;
+        color: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Rope</h1>
+      <div class="actions">
+        <a href="game.html" class="btn btn-play">Play</a>
+        <a href="editor.html" class="btn btn-editor">Editor</a>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<XnaContent>
+  <Asset Type="SharedLibrary.SpritesData">
+    <sprites>
+      <Item>
+        <spriteId>01</spriteId>
+        <textureName>item</textureName>
+        <size>2</size>
+        <isItem>false</isItem>
+      </Item>
+      <Item>
+        <spriteId>02</spriteId>
+        <textureName>puu</textureName>
+        <size>5</size>
+        <isItem>false</isItem>
+      </Item>
+      <Item>
+        <spriteId>03</spriteId>
+        <textureName>kivi1</textureName>
+        <size>3</size>
+        <isItem>false</isItem>
+      </Item>
+      <Item>
+        <spriteId>04</spriteId>
+        <textureName>kivi2</textureName>
+        <size>3</size>
+        <isItem>false</isItem>
+      </Item>
+      <Item>
+        <spriteId>05</spriteId>
+        <textureName>kivi3</textureName>
+        <size>3</size>
+        <isItem>false</isItem>
+      </Item>
+      <Item>
+        <spriteId>06</spriteId>
+        <textureName>miekka</textureName>
+        <size>2</size>
+        <isItem>true</isItem>
+      </Item>
+      <Item>
+        <spriteId>07</spriteId>
+        <textureName>pallo</textureName>
+        <size>1</size>
+        <isItem>false</isItem>
+      </Item>
+      <Item>
+        <spriteId>08</spriteId>
+        <textureName>sieni1</textureName>
+        <size>2</size>
+        <isItem>false</isItem>
+      </Item>
+      <Item>
+        <spriteId>09</spriteId>
+        <textureName>sieni2</textureName>
+        <size>2</size>
+        <isItem>false</isItem>
+      </Item>
+    </sprites>
+  </Asset>
+  
+</XnaContent>
